@@ -955,8 +955,9 @@ class MirrorControlCenter(ctk.CTkToplevel):
         main_layout = ctk.CTkFrame(self, fg_color="transparent")
         main_layout.pack(fill="both", expand=True, padx=8, pady=8)
         
-        # LEFT: The scrcpy container (iframe behavior)
-        self.embed_frame = ctk.CTkFrame(main_layout, fg_color="#000000", corner_radius=8)
+        # LEFT: The scrcpy container (iframe behavior) - standard tk Frame for native X11 embedding compatibility
+        import tkinter as tk
+        self.embed_frame = tk.Frame(main_layout, bg="#000000")
         self.embed_frame.pack(side="left", fill="both", expand=True, padx=(0, 8), pady=4)
 
         # RIGHT: Controls Panel
