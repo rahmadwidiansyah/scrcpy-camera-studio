@@ -166,8 +166,17 @@ def main():
                 fg_color="#dc3545"
             ))
 
+    def on_scrcpy_start(mode="camera"):
+        def start_worker():
+            scrcpy.start(settings.current_settings, mode=mode)
+            if mode == "mirror" and scrcpy.is_running("mirror"):
+                # Spawn Control Center in main GUI thread
+                from services.ui import MirrorControlCenter
+                app.after(0, lambda: MirrorControlCenter(app, scrcpy))
+        threading.Thread(target=start_worker, daemon=True).start()
+
     app.set_callbacks(
-        start_cb=lambda mode="camera": threading.Thread(target=lambda: scrcpy.start(settings.current_settings, mode=mode), daemon=True).start(),
+        start_cb=on_scrcpy_start,
         stop_cb=scrcpy.stop,
         setting_change_cb=settings.set,
         # Arahkan ke start_install sungguhan dan lemparkan callback on_install_done

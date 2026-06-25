@@ -66,13 +66,14 @@ class ScrcpyManager:
             # Mari kita set explicit --audio-source=playback untuk Both/Playback agar aman.
 
             # Konfigurasi Rotasi dan Mirror/Flip.
-            # scrcpy versi baru memakai derajat, bukan indeks 0/1/2/3.
-            rotate = settings_data.get("rotate", 0)
-            rotation_map = {0: "0", 1: "90", 2: "180", 3: "270", "0": "0", "1": "90", "2": "180", "3": "270"}
-            orientation = rotation_map.get(rotate, str(rotate))
-            if settings_data.get("mirror", False) and mode == "camera":
-                orientation = f"flip{orientation}"
-            args.append(f"--capture-orientation={orientation}")
+            # Hanya berlaku untuk mode camera.
+            if mode == "camera":
+                rotate = settings_data.get("rotate", 0)
+                rotation_map = {0: "0", 1: "90", 2: "180", 3: "270", "0": "0", "1": "90", "2": "180", "3": "270"}
+                orientation = rotation_map.get(rotate, str(rotate))
+                if settings_data.get("mirror", False):
+                    orientation = f"flip{orientation}"
+                args.append(f"--capture-orientation={orientation}")
 
             # Implementasi Preview Mode
             preview_mode = settings_data.get("preview_mode", "Normal Window")

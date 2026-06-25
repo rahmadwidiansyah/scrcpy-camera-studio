@@ -887,6 +887,126 @@ class CameraStudioUI(ctk.CTk):
         return "[error]" in lowered or "error:" in lowered or "gagal" in lowered or "failed" in lowered
 
 
+class MirrorControlCenter(ctk.CTkToplevel):
+    def __init__(self, parent, scrcpy_manager):
+        super().__init__(parent)
+        self.parent = parent
+        self.scrcpy_manager = scrcpy_manager
+        
+        self.title("Mirror Control Center")
+        self.geometry("260x340")
+        self.resizable(True, True)
+        self.attributes("-alpha", 0.95)
+        
+        # Position next to parent window
+        parent_x = parent.winfo_x()
+        parent_y = parent.winfo_y()
+        parent_w = parent.winfo_width()
+        self.geometry(f"260x340+{parent_x + parent_w + 10}+{parent_y}")
+        
+        self._setup_ui()
+        
+    def _setup_ui(self):
+        container = ctk.CTkFrame(self, fg_color="transparent")
+        container.pack(fill="both", expand=True, padx=12, pady=12)
+        
+        lbl_title = ctk.CTkLabel(
+            container, 
+            text="📺 Mirror Controls", 
+            font=("Arial", 14, "bold")
+        )
+        lbl_title.pack(anchor="w", pady=(0, 10))
+        
+        # Audio Volume Control
+        vol_frame = ctk.CTkFrame(container, fg_color="transparent")
+        vol_frame.pack(fill="x", pady=4)
+        ctk.CTkLabel(vol_frame, text="Volume:").pack(side="left")
+        self.vol_slider = ctk.CTkSlider(vol_frame, from_=0, to=100, number_of_steps=10, command=self._on_volume_change)
+        self.vol_slider.set(80)
+        self.vol_slider.pack(side="right", fill="x", expand=True, padx=(8, 0))
+
+        # Shortcuts quick info
+        shortcut_frame = ctk.CTkFrame(container, corner_radius=6)
+        shortcut_frame.pack(fill="both", expand=True, pady=6)
+        
+        lbl_shortcut_title = ctk.CTkLabel(shortcut_frame, text="Useful Shortcuts (Active Window):", font=("Arial", 10, "bold"))
+        lbl_shortcut_title.pack(anchor="w", padx=6, pady=2)
+        
+        shortcuts = [
+            ("Alt + F", "Toggle Fullscreen"),
+            ("Alt + R", "Rotate Display"),
+            ("Alt + H", "Press HOME"),
+            ("Alt + B", "Press BACK"),
+            ("Alt + P", "Toggle Power State"),
+            ("Alt + Up/Down", "Volume Up/Down"),
+            ("Alt + G", "Resize Window (1:1)")
+        ]
+        for key, desc in shortcuts:
+            row = ctk.CTkFrame(shortcut_frame, fg_color="transparent")
+            row.pack(fill="x", padx=6, pady=1)
+            ctk.CTkLabel(row, text=key, font=("Arial", 9, "bold"), text_color="#0d6efd").pack(side="left")
+            ctk.CTkLabel(row, text=f": {desc}", font=("Arial", 9)).pack(side="left")
+
+        # Interactive controls (using adb input keyevent or scrcpy triggers)
+        btn_grid = ctk.CTkFrame(container, fg_color="transparent")
+        btn_grid.pack(fill="x", pady=(6, 0))
+        
+        btn_home = ctk.CTkButton(btn_grid, text="Home", width=65, height=28, command=self._press_home)
+        btn_home.pack(side="left", padx=2)
+        
+        btn_back = ctk.CTkButton(btn_grid, text="Back", width=65, height=28, command=self._press_back)
+        btn_back.pack(side="left", padx=2)
+
+        btn_power = ctk.CTkButton(btn_grid, text="Power", width=65, height=28, fg_color="#dc3545", hover_color="#bb2d3b", command=self._press_power)
+        btn_power.pack(side="left", padx=2)
+
+        # Stop this Mirror stream only
+        btn_stop_mirror = ctk.CTkButton(
+            container,
+            text="Stop Screen Mirror",
+            fg_color="#dc3545",
+            hover_color="#bb2d3b",
+            height=32,
+            command=self._stop_mirror
+        )
+        btn_stop_mirror.pack(fill="x", pady=(10, 0))
+
+    def _on_volume_change(self, val):
+        volume_pct = int(val)
+        # scrcpy supports real time volume via Alt+Up/Down in window.
+        # Inform user
+        pass
+
+    def _execute_adb_key(self, code):
+        def worker():
+            try:
+                import subprocess
+                from config.config import Config
+                adb_path = Config.get_bin_path("adb")
+                serial = self.parent.var_target_dev.get().split("(")[-1].strip(")")
+                cmd = [adb_path]
+                if serial:
+                    cmd.extend(["-s", serial])
+                cmd.extend(["shell", "input", "keyevent", str(code)])
+                subprocess.run(cmd, creationflags=subprocess.CREATE_NO_WINDOW if os.name == 'nt' else 0, timeout=5)
+            except Exception:
+                pass
+        threading.Thread(target=worker, daemon=True).start()
+
+    def _press_home(self):
+        self._execute_adb_key(3)
+
+    def _press_back(self):
+        self._execute_adb_key(4)
+
+    def _press_power(self):
+        self._execute_adb_key(26)
+
+    def _stop_mirror(self):
+        self.scrcpy_manager.stop("mirror")
+        self.destroy()
+
+
 if __name__ == "__main__":
     app = CameraStudioUI()
     app.apply_theme("Dark")
