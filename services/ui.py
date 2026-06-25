@@ -894,13 +894,21 @@ class ToolTip:
         self.tip_window = None
         self.widget.bind("<Enter>", self.show_tip)
         self.widget.bind("<Leave>", self.hide_tip)
+        self.widget.bind("<Button-1>", self.hide_tip)
 
     def show_tip(self, event=None):
         if self.tip_window or not self.text:
             return
-        x, y, cx, cy = self.widget.bbox("insert")
-        x = x + self.widget.winfo_rootx() + 25
-        y = y + self.widget.winfo_rooty() + 25
+        
+        # Dapatkan lebar dan posisi absolut tombol
+        widget_w = self.widget.winfo_width()
+        root_x = self.widget.winfo_rootx()
+        root_y = self.widget.winfo_rooty()
+        
+        # Posisikan tooltip di sebelah kanan tombol (agar tidak menghalangi klik)
+        x = root_x + widget_w + 10
+        y = root_y + 5
+        
         self.tip_window = tw = ctk.CTkToplevel(self.widget)
         tw.wm_overrideredirect(1)
         tw.wm_geometry(f"+{x}+{y}")
@@ -932,8 +940,8 @@ class MirrorControlCenter(ctk.CTkToplevel):
         self.parent = parent
         self.scrcpy_manager = scrcpy_manager
         
-        self.title("Mirror Control Center")
-        self.geometry("260x420")
+        self.title("Mirror Control")
+        self.geometry("64x360")
         self.resizable(False, False)
         self.attributes("-alpha", 0.96)
         
@@ -941,7 +949,7 @@ class MirrorControlCenter(ctk.CTkToplevel):
         parent_x = parent.winfo_x()
         parent_y = parent.winfo_y()
         parent_w = parent.winfo_width()
-        self.geometry(f"260x420+{parent_x + parent_w + 10}+{parent_y}")
+        self.geometry(f"64x360+{parent_x + parent_w + 10}+{parent_y}")
         
         self._setup_ui()
         
@@ -1007,8 +1015,8 @@ class MirrorControlCenter(ctk.CTkToplevel):
                             buff = ctypes.create_unicode_buffer(length + 1)
                             user32.GetWindowTextW(hwnd, buff, length + 1)
                             title = buff.value
-                            # Match scrcpy_mirror or scrcpy window title
-                            if "scrcpy_mirror" in title or (title.startswith("scrcpy") and ("mirror" in title.lower() or "RR8R9041F" in title or "device" in title.lower())):
+                            # Match strictly scrcpy_mirror (which is the mirror window)
+                            if "scrcpy_mirror" in title:
                                 ctypes.cast(lparam, ctypes.POINTER(ctypes.c_void_p))[0] = hwnd
                                 return False # stop enumeration
                         return True
@@ -1057,93 +1065,104 @@ class MirrorControlCenter(ctk.CTkToplevel):
                         pass
 
             if scrcpy_x is not None and scrcpy_y is not None:
-                # Target coordinate: Di sebelah kiri jendela scrcpy (scrcpy_x - lebar_controller - offset)
-                # Lebar controller kita adalah 260.
-                target_x = scrcpy_x - 270
-                # Jika terlalu mepet kiri layar, taruh di sebelah kanan (scrcpy_x + scrcpy_w + 10)
-                if target_x < 10:
-                    target_x = scrcpy_x + scrcpy_w + 10
+                # Dapatkan koordinat jendela control saat ini
+                ctrl_x = self.winfo_x()
+                ctrl_y = self.winfo_y()
                 
-                # Update geometri controller agar menempel (sticky)
-                self.geometry(f"260x420+{target_x}+{scrcpy_y}")
+                # Posisi scrcpy mirror yang diinginkan: 1px di sebelah kiri jendela control
+                new_scrcpy_x = ctrl_x - scrcpy_w - 1
+                new_scrcpy_y = ctrl_y
+                
+                # Hanya pindahkan jendela scrcpy jika posisinya berbeda secara signifikan (toleransi 1px)
+                if abs(scrcpy_x - new_scrcpy_x) > 1 or abs(scrcpy_y - new_scrcpy_y) > 1:
+                    if os.name == 'nt':
+                        try:
+                            # Gunakan SetWindowPos di Windows tanpa mengubah Z-order (SWP_NOZORDER = 0x0004) dan ukuran (SWP_NOSIZE = 0x0001)
+                            # serta SWP_NOACTIVATE = 0x0010
+                            user32.SetWindowPos(hwnd, 0, new_scrcpy_x, new_scrcpy_y, 0, 0, 0x0004 | 0x0001 | 0x0010)
+                        except Exception:
+                            pass
+                    else:
+                        try:
+                            # Di Linux menggunakan xdotool jika terdeteksi id-nya
+                            if 'target_id' in locals():
+                                subprocess.run(["xdotool", "windowmove", target_id, str(new_scrcpy_x), str(new_scrcpy_y)], stderr=subprocess.DEVNULL)
+                            else:
+                                # Fallback wmctrl untuk Linux
+                                subprocess.run(["wmctrl", "-r", "scrcpy_mirror", "-e", f"0,{new_scrcpy_x},{new_scrcpy_y},-1,-1"], stderr=subprocess.DEVNULL)
+                        except Exception:
+                            pass
         except Exception:
             pass
 
         self.after(200, self._track_scrcpy_window)
 
     def _setup_ui(self):
+        # Configure this to be a minimal vertical sidebar
+        self.geometry("64x360")
         container = ctk.CTkFrame(self, fg_color="transparent")
-        container.pack(fill="both", expand=True, padx=12, pady=12)
+        container.pack(fill="both", expand=True, padx=4, pady=4)
         
-        lbl_title = ctk.CTkLabel(
-            container, 
-            text="📺 Mirror Control Center", 
-            font=("Arial", 14, "bold")
-        )
-        lbl_title.pack(anchor="w", pady=(0, 10))
+        # Vertical stack of small buttons
+        buttons_spec = [
+            ("🏠", "Home", self._press_home, "Go Home (Alt + h)"),
+            ("🔙", "Back", self._press_back, "Go Back (Alt + b)"),
+            ("🔌", "Power", self._press_power, "Toggle Screen Power (Alt + p)"),
+            ("🔊", "Vol +", self._press_volume_up, "Volume Up (Alt + Up)"),
+            ("🔉", "Vol -", self._press_volume_down, "Volume Down (Alt + Down)"),
+            ("🔄", "Rotate", self._toggle_rotation, "Toggle Screen Rotation (Alt + r)"),
+            ("📸", "Capture", self._take_screenshot, "Take Screenshot (Alt + s)"),
+            ("❌", "Stop", self._stop_mirror, "Stop Screen Mirror")
+        ]
         
-        # Audio Volume Control
-        vol_frame = ctk.CTkFrame(container, fg_color="transparent")
-        vol_frame.pack(fill="x", pady=4)
-        ctk.CTkLabel(vol_frame, text="Volume:").pack(side="left")
-        self.vol_slider = ctk.CTkSlider(vol_frame, from_=0, to=100, number_of_steps=10, command=self._on_volume_change)
-        self.vol_slider.set(80)
-        self.vol_slider.pack(side="right", fill="x", expand=True, padx=(8, 0))
+        for icon, label, cmd, tooltip_text in buttons_spec:
+            btn = ctk.CTkButton(
+                container, 
+                text=icon, 
+                width=46, 
+                height=36, 
+                font=("Arial", 14),
+                fg_color="#2b2b2b" if icon != "❌" else "#dc3545",
+                hover_color="#3e3e3e" if icon != "❌" else "#bb2d3b",
+                command=cmd
+            )
+            btn.pack(pady=3, padx=2)
+            ToolTip(btn, f"{label}\n{tooltip_text}")
 
-        # Command Quick Buttons Frame
-        cmd_frame = ctk.CTkFrame(container, fg_color="transparent")
-        cmd_frame.pack(fill="x", pady=6)
-        
-        # Quick Actions with Tooltips (Shortcut references)
-        btn_home = ctk.CTkButton(cmd_frame, text="🏠 Home", width=70, height=30, command=self._press_home)
-        btn_home.grid(row=0, column=0, padx=2, pady=2)
-        ToolTip(btn_home, "Go to Home Screen\nShortcut: Alt + h")
+    def _press_volume_up(self):
+        self._execute_adb_key(24)
 
-        btn_back = ctk.CTkButton(cmd_frame, text="🔙 Back", width=70, height=30, command=self._press_back)
-        btn_back.grid(row=0, column=1, padx=2, pady=2)
-        ToolTip(btn_back, "Go Back\nShortcut: Alt + b")
+    def _press_volume_down(self):
+        self._execute_adb_key(25)
 
-        btn_power = ctk.CTkButton(cmd_frame, text="🔌 Power", width=70, height=30, command=self._press_power)
-        btn_power.grid(row=0, column=2, padx=2, pady=2)
-        ToolTip(btn_power, "Toggle Phone Screen Power State\nShortcut: Alt + p")
-
-        btn_fs = ctk.CTkButton(cmd_frame, text="🖥 Fullscreen", width=70, height=30, command=self._dummy_shortcut)
-        btn_fs.grid(row=1, column=0, padx=2, pady=2)
-        ToolTip(btn_fs, "Toggle Fullscreen Window\nShortcut: Alt + f")
-
-        btn_rot = ctk.CTkButton(cmd_frame, text="🔄 Rotate", width=70, height=30, command=self._dummy_shortcut)
-        btn_rot.grid(row=1, column=1, padx=2, pady=2)
-        ToolTip(btn_rot, "Rotate Device Display\nShortcut: Alt + r")
-
-        btn_resize = ctk.CTkButton(cmd_frame, text="📏 Resize", width=70, height=30, command=self._dummy_shortcut)
-        btn_resize.grid(row=1, column=2, padx=2, pady=2)
-        ToolTip(btn_resize, "Resize Window (1:1 Aspect)\nShortcut: Alt + g")
-
-        # Screenshot Action
-        screenshot_frame = ctk.CTkFrame(container, fg_color="transparent")
-        screenshot_frame.pack(fill="x", pady=6)
-        
-        btn_screenshot = ctk.CTkButton(
-            screenshot_frame, 
-            text="📸 Take Screenshot", 
-            fg_color="#198754", 
-            hover_color="#157347",
-            height=32,
-            command=self._take_screenshot
-        )
-        btn_screenshot.pack(fill="x")
-        ToolTip(btn_screenshot, "Capture screen and save to cache directory\nShortcut: Alt + s")
-
-        # Stop this Mirror stream only
-        btn_stop_mirror = ctk.CTkButton(
-            container,
-            text="Stop Screen Mirror",
-            fg_color="#dc3545",
-            hover_color="#bb2d3b",
-            height=32,
-            command=self._stop_mirror
-        )
-        btn_stop_mirror.pack(fill="x", side="bottom", pady=(10, 0))
+    def _toggle_rotation(self):
+        # We can toggle accelerometer rotation or send standard rotation command
+        def worker():
+            try:
+                import subprocess
+                from config.config import Config
+                adb_path = Config.get_bin_path("adb")
+                serial = self.parent.var_target_dev.get().split("(")[-1].strip(")")
+                
+                # Cek orientasi saat ini
+                cmd_get = [adb_path]
+                if serial:
+                    cmd_get.extend(["-s", serial])
+                cmd_get.extend(["shell", "settings", "get", "system", "user_rotation"])
+                out = subprocess.check_output(cmd_get, text=True, stderr=subprocess.DEVNULL).strip()
+                
+                current = int(out) if out.isdigit() else 0
+                next_rot = (current + 1) % 4
+                
+                # Ubah orientasi
+                cmd_set = [adb_path]
+                if serial:
+                    cmd_set.extend(["-s", serial])
+                cmd_set.extend(["shell", "settings", "put", "system", "user_rotation", str(next_rot)])
+                subprocess.run(cmd_set, creationflags=subprocess.CREATE_NO_WINDOW if os.name == 'nt' else 0, timeout=5)
+            except Exception:
+                pass
+        threading.Thread(target=worker, daemon=True).start()
 
     def _on_volume_change(self, val):
         pass
