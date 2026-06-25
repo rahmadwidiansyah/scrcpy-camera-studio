@@ -1,11 +1,22 @@
 import json
 import os
+import sys
 
 class SettingsManager:
     def __init__(self, logger, config_file="settings.json"):
         self.logger = logger
+        
+        # --- PENYESUAIAN PYINSTALLER UNTUK SETTINGS.JSON ---
         if not os.path.isabs(config_file):
-            config_file = os.path.join(os.path.dirname(os.path.abspath(__file__)), config_file)
+            if getattr(sys, 'frozen', False):
+                # Jika jalan sebagai exe, simpan settings.json persis di sebelah file .exe
+                base_dir = os.path.dirname(sys.executable)
+            else:
+                # Jika jalan sebagai script python, simpan sejajar dengan script
+                base_dir = os.path.dirname(os.path.abspath(__file__))
+            
+            config_file = os.path.join(base_dir, config_file)
+            
         self.config_file = config_file
         
         self.default_settings = {
@@ -18,13 +29,13 @@ class SettingsManager:
             "audio": False,
             "theme": "System",
             "preview_mode": "Normal Window",
-            "target_device": ""  # Kunci baru untuk menyimpan Target Device
+            "target_device": ""  
         }
         
         self.current_settings = self.default_settings.copy()
         self.load()
 
-    # ... [Fungsi load, save, get, dan set TETAP SAMA] ...
+    # ... [KODE BAWAHNYA TETAP SAMA] ...
 
     def load(self):
         if os.path.exists(self.config_file):

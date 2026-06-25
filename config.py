@@ -1,8 +1,14 @@
 import os
+import sys
 import shutil
 
 class Config:
-    APP_DIR = os.path.dirname(os.path.abspath(__file__))
+    # --- PENYESUAIAN PYINSTALLER ---
+    # Jika jalan sebagai EXE, arahkan root ke temporary folder PyInstaller (_MEIPASS)
+    if getattr(sys, 'frozen', False):
+        APP_DIR = sys._MEIPASS
+    else:
+        APP_DIR = os.path.dirname(os.path.abspath(__file__))
 
     # Path folder lokal untuk binary pihak ketiga
     BIN_DIR = os.path.join(APP_DIR, "bin")
