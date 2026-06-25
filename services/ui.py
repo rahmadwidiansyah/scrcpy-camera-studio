@@ -125,18 +125,29 @@ class CameraStudioUI(ctk.CTk):
         self.btn_start = ctk.CTkButton(
             button_box,
             text="Start Camera",
-            width=132,
+            width=120,
             height=38,
             fg_color="#198754",
             hover_color="#157347",
             command=self._on_start_clicked
         )
-        self.btn_start.pack(side="left", padx=(0, 8))
+        self.btn_start.pack(side="left", padx=(0, 6))
+
+        self.btn_mirror = ctk.CTkButton(
+            button_box,
+            text="Screen Mirror",
+            width=120,
+            height=38,
+            fg_color="#0d6efd",
+            hover_color="#0b5ed7",
+            command=self._on_mirror_clicked
+        )
+        self.btn_mirror.pack(side="left", padx=(0, 6))
 
         self.btn_stop = ctk.CTkButton(
             button_box,
             text="Stop",
-            width=92,
+            width=80,
             height=38,
             fg_color="#dc3545",
             hover_color="#bb2d3b",
@@ -413,15 +424,17 @@ class CameraStudioUI(ctk.CTk):
         if is_running:
             self.lbl_cam_status.configure(text="Running", text_color="#28a745")
             self.btn_start.configure(state="disabled")
+            self.btn_mirror.configure(state="disabled")
             self.btn_stop.configure(state="normal")
             if not previous_state:
-                self.append_log("Camera started successfully.")
+                self.append_log("scrcpy stream started successfully.")
         else:
             self.lbl_cam_status.configure(text="Stopped", text_color="#dc3545")
             self.btn_start.configure(state="normal")
+            self.btn_mirror.configure(state="normal")
             self.btn_stop.configure(state="disabled")
             if previous_state:
-                self.append_log("Camera stopped.")
+                self.append_log("scrcpy stream stopped.")
 
     def update_scrcpy_status(self, is_running):
         if self._scrcpy_running_ui != is_running:
@@ -442,7 +455,11 @@ class CameraStudioUI(ctk.CTk):
 
     def _on_start_clicked(self):
         if self.start_callback:
-            self.start_callback()
+            self.start_callback(mode="camera")
+
+    def _on_mirror_clicked(self):
+        if self.start_callback:
+            self.start_callback(mode="mirror")
 
     def _on_stop_clicked(self):
         if self.stop_callback:
@@ -458,11 +475,13 @@ class CameraStudioUI(ctk.CTk):
         if is_missing:
             self.btn_install.grid(row=2, column=0, columnspan=4, sticky="ew", padx=8, pady=(0, 10))
             self.btn_start.configure(state="disabled")
+            self.btn_mirror.configure(state="disabled")
             self.append_log("Action required: Missing dependencies detected.")
         else:
             self.btn_install.grid_forget()
             if not self._scrcpy_running_ui:
                 self.btn_start.configure(state="normal")
+                self.btn_mirror.configure(state="normal")
 
     def update_dependency_status(self, dep_name, is_found, is_optional=False):
         label = self.status_labels.get(dep_name)

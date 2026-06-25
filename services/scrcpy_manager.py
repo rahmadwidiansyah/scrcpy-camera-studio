@@ -12,14 +12,17 @@ class ScrcpyManager:
         self.scrcpy_path = Config.get_bin_path("scrcpy")
         self._last_return_code = None
 
-    def start(self, settings_data):
+    def start(self, settings_data, mode="camera"):
         if self.is_running():
             self.logger.warning("Scrcpy sudah berjalan. Mengabaikan perintah Start.")
             return
             
         try:
-            self.logger.info("Menyiapkan parameter kamera scrcpy...")
-            args = [self.scrcpy_path, "--video-source=camera"]
+            self.logger.info(f"Menyiapkan parameter scrcpy (mode: {mode})...")
+            if mode == "mirror":
+                args = [self.scrcpy_path]
+            else:
+                args = [self.scrcpy_path, "--video-source=camera"]
 
             # --- IMPLEMENTASI TARGET MULTI-DEVICE ---
             target_serial = settings_data.get("target_device", "").strip()
@@ -28,7 +31,7 @@ class ScrcpyManager:
 
             # Konfigurasi Kamera
             cam_id = settings_data.get("last_camera", "").strip()
-            if cam_id:
+            if cam_id and mode == "camera":
                 args.append(f"--camera-id={cam_id}")
 
             # Konfigurasi Resolusi
@@ -39,7 +42,10 @@ class ScrcpyManager:
             # Konfigurasi FPS
             fps = settings_data.get("fps", 30)
             if fps:
-                args.append(f"--camera-fps={fps}")
+                if mode == "camera":
+                    args.append(f"--camera-fps={fps}")
+                else:
+                    args.append(f"--max-fps={fps}")
 
             # Konfigurasi Bitrate
             bitrate = settings_data.get("bitrate", "8M")
