@@ -971,8 +971,16 @@ class MirrorControlCenter(ctk.CTkToplevel):
         if not self.winfo_exists():
             return
         
-        # Jika scrcpy sudah mati, hancurkan control center ini
-        if not self.scrcpy_manager.is_running("mirror"):
+        # Tambahkan grace period 5 detik untuk memberi waktu scrcpy inisialisasi awal
+        if not hasattr(self, "_start_time"):
+            import time
+            self._start_time = time.time()
+            
+        import time
+        elapsed = time.time() - self._start_time
+
+        # Jika scrcpy sudah mati setelah masa inisialisasi lewat, hancurkan control center ini
+        if elapsed > 5.0 and not self.scrcpy_manager.is_running("mirror"):
             self.destroy()
             return
             
