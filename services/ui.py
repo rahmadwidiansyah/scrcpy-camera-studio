@@ -945,11 +945,8 @@ class MirrorControlCenter(ctk.CTkToplevel):
         
         self._setup_ui()
         
-        # Map layouts first, then set borderless attributes
         self.update()
-        self.overrideredirect(True)
         self.attributes("-topmost", True)
-        self.lift()
         
         # Add window drag events
         self.bind("<Button-1>", self._start_drag)

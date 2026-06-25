@@ -89,8 +89,8 @@ class ScrcpyManager:
                     args.append("--no-window")
                 # Jika "Normal Window", kita tidak perlu menambahkan argumen apa pun (default scrcpy)
             elif mode == "mirror":
-                # Gunakan borderless untuk menyelaraskan dengan Floating Controller Overlay
-                args.extend(["--window-title=scrcpy_mirror", "--window-borderless"])
+                # Gunakan title custom agar mudah dikenali tetapi biarkan window frame OS standar agar bisa di-close/drag
+                args.extend(["--window-title=scrcpy_mirror"])
 
             # Menyembunyikan jendela console bawaan di Windows
             creationflags = subprocess.CREATE_NO_WINDOW if os.name == 'nt' else 0
