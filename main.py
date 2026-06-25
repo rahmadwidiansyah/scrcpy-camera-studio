@@ -171,6 +171,7 @@ def main():
             from services.ui import MirrorControlCenter
             # Create the dialog window frame synchronously so winfo_id() is ready
             control_center = MirrorControlCenter(app, scrcpy)
+            app.mirror_control_center = control_center
             parent_id = control_center.get_embed_frame_id()
             
             def start_worker():

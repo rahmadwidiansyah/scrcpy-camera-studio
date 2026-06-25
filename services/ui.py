@@ -946,9 +946,9 @@ class MirrorControlCenter(ctk.CTkToplevel):
         self._setup_ui()
         
     def get_embed_frame_id(self):
-        # returns the native window ID for the scrcpy display canvas (iframe)
-        self.update_idletasks()
-        return self.embed_canvas.winfo_id()
+        # Force window manager initialization to register the native window ID
+        self.update()
+        return self.embed_frame.winfo_id()
 
     def _setup_ui(self):
         # Main layout frame: Left is scrcpy view frame, Right is control center
@@ -958,11 +958,6 @@ class MirrorControlCenter(ctk.CTkToplevel):
         # LEFT: The scrcpy container (iframe behavior)
         self.embed_frame = ctk.CTkFrame(main_layout, fg_color="#000000", corner_radius=8)
         self.embed_frame.pack(side="left", fill="both", expand=True, padx=(0, 8), pady=4)
-        
-        # Canvas/Window ID provider for scrcpy window embedding
-        import tkinter as tk
-        self.embed_canvas = tk.Canvas(self.embed_frame, bg="#000000", highlightthickness=0)
-        self.embed_canvas.pack(fill="both", expand=True, padx=4, pady=4)
 
         # RIGHT: Controls Panel
         container = ctk.CTkFrame(main_layout, width=240, fg_color="transparent")
