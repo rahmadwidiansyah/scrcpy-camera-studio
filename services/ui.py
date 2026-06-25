@@ -992,11 +992,31 @@ class MirrorControlCenter(ctk.CTkToplevel):
             scrcpy_w = None
             
             if os.name == 'nt':
-                # Windows implementation
+                # Windows implementation with robust title search
                 try:
                     import ctypes
                     user32 = ctypes.windll.user32
-                    hwnd = user32.FindWindowW(None, "scrcpy_mirror")
+                    
+                    # Callback function to enum windows and find partial title match
+                    WNDENUMPROC = ctypes.WINFUNCTYPE(ctypes.c_bool, ctypes.c_void_p, ctypes.c_void_p)
+                    found_hwnd = ctypes.c_void_p(0)
+                    
+                    def enum_windows_callback(hwnd, lparam):
+                        length = user32.GetWindowTextLengthW(hwnd)
+                        if length > 0:
+                            buff = ctypes.create_unicode_buffer(length + 1)
+                            user32.GetWindowTextW(hwnd, buff, length + 1)
+                            title = buff.value
+                            # Match scrcpy_mirror or scrcpy window title
+                            if "scrcpy_mirror" in title or (title.startswith("scrcpy") and ("mirror" in title.lower() or "RR8R9041F" in title or "device" in title.lower())):
+                                ctypes.cast(lparam, ctypes.POINTER(ctypes.c_void_p))[0] = hwnd
+                                return False # stop enumeration
+                        return True
+                        
+                    hwnd_ref = ctypes.byref(found_hwnd)
+                    user32.EnumWindows(WNDENUMPROC(enum_windows_callback), ctypes.cast(hwnd_ref, ctypes.c_void_p))
+                    
+                    hwnd = found_hwnd.value
                     if hwnd:
                         rect = ctypes.wintypes.RECT()
                         if user32.GetWindowRect(hwnd, ctypes.byref(rect)):
