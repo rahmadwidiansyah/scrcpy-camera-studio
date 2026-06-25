@@ -12,7 +12,7 @@ class ScrcpyManager:
         self.scrcpy_path = Config.get_bin_path("scrcpy")
         self._last_return_codes = {}
 
-    def start(self, settings_data, mode="camera"):
+    def start(self, settings_data, mode="camera", parent_window_id=None):
         if self.is_running(mode):
             self.logger.warning(f"Scrcpy mode {mode} sudah berjalan. Mengabaikan perintah Start.")
             return
@@ -21,6 +21,8 @@ class ScrcpyManager:
             self.logger.info(f"Menyiapkan parameter scrcpy (mode: {mode})...")
             if mode == "mirror":
                 args = [self.scrcpy_path]
+                if parent_window_id:
+                    args.append(f"--parent={parent_window_id}")
             else:
                 args = [self.scrcpy_path, "--video-source=camera"]
 

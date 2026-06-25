@@ -932,26 +932,45 @@ class MirrorControlCenter(ctk.CTkToplevel):
         self.parent = parent
         self.scrcpy_manager = scrcpy_manager
         
-        self.title("Mirror Control Center")
-        self.geometry("260x360")
+        self.title("Screen Mirror Frame Viewer & Controls")
+        self.geometry("780x520")
         self.resizable(True, True)
-        self.attributes("-alpha", 0.95)
+        self.attributes("-alpha", 0.98)
         
         # Position next to parent window
         parent_x = parent.winfo_x()
         parent_y = parent.winfo_y()
         parent_w = parent.winfo_width()
-        self.geometry(f"260x360+{parent_x + parent_w + 10}+{parent_y}")
+        self.geometry(f"780x520+{parent_x + parent_w + 10}+{parent_y}")
         
         self._setup_ui()
         
+    def get_embed_frame_id(self):
+        # returns the native window ID for the scrcpy display canvas (iframe)
+        self.update_idletasks()
+        return self.embed_canvas.winfo_id()
+
     def _setup_ui(self):
-        container = ctk.CTkFrame(self, fg_color="transparent")
-        container.pack(fill="both", expand=True, padx=12, pady=12)
+        # Main layout frame: Left is scrcpy view frame, Right is control center
+        main_layout = ctk.CTkFrame(self, fg_color="transparent")
+        main_layout.pack(fill="both", expand=True, padx=8, pady=8)
+        
+        # LEFT: The scrcpy container (iframe behavior)
+        self.embed_frame = ctk.CTkFrame(main_layout, fg_color="#000000", corner_radius=8)
+        self.embed_frame.pack(side="left", fill="both", expand=True, padx=(0, 8), pady=4)
+        
+        # Canvas/Window ID provider for scrcpy window embedding
+        import tkinter as tk
+        self.embed_canvas = tk.Canvas(self.embed_frame, bg="#000000", highlightthickness=0)
+        self.embed_canvas.pack(fill="both", expand=True, padx=4, pady=4)
+
+        # RIGHT: Controls Panel
+        container = ctk.CTkFrame(main_layout, width=240, fg_color="transparent")
+        container.pack(side="right", fill="y", padx=4, pady=4)
         
         lbl_title = ctk.CTkLabel(
             container, 
-            text="📺 Mirror Control Center", 
+            text="📺 Control Center", 
             font=("Arial", 14, "bold")
         )
         lbl_title.pack(anchor="w", pady=(0, 10))

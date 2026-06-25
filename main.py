@@ -167,13 +167,17 @@ def main():
             ))
 
     def on_scrcpy_start(mode="camera"):
-        def start_worker():
-            scrcpy.start(settings.current_settings, mode=mode)
-            if mode == "mirror" and scrcpy.is_running("mirror"):
-                # Spawn Control Center in main GUI thread
-                from services.ui import MirrorControlCenter
-                app.after(0, lambda: MirrorControlCenter(app, scrcpy))
-        threading.Thread(target=start_worker, daemon=True).start()
+        if mode == "mirror":
+            from services.ui import MirrorControlCenter
+            # Create the dialog window frame synchronously so winfo_id() is ready
+            control_center = MirrorControlCenter(app, scrcpy)
+            parent_id = control_center.get_embed_frame_id()
+            
+            def start_worker():
+                scrcpy.start(settings.current_settings, mode="mirror", parent_window_id=parent_id)
+            threading.Thread(target=start_worker, daemon=True).start()
+        else:
+            threading.Thread(target=lambda: scrcpy.start(settings.current_settings, mode="camera"), daemon=True).start()
 
     app.set_callbacks(
         start_cb=on_scrcpy_start,
