@@ -980,11 +980,65 @@ class MirrorControlCenter(ctk.CTkToplevel):
         if elapsed > 5.0 and not self.scrcpy_manager.is_running("mirror"):
             self.destroy()
             return
+
+        # Sticky positioning logic
+        try:
+            import os
+            import subprocess
+            import re
             
-        # Di Linux/Windows kita bisa melakukan kueri window manager / xdotool secara opsional, 
-        # namun untuk stabilitas cross-platform tanpa dependency eksternal, controller ini
-        # dapat digeser manual oleh user dan akan menempel di paling depan (topmost) di layar.
-        self.after(1000, self._track_scrcpy_window)
+            scrcpy_x = None
+            scrcpy_y = None
+            scrcpy_w = None
+            
+            if os.name == 'nt':
+                # Windows implementation
+                try:
+                    import ctypes
+                    user32 = ctypes.windll.user32
+                    hwnd = user32.FindWindowW(None, "scrcpy_mirror")
+                    if hwnd:
+                        rect = ctypes.wintypes.RECT()
+                        if user32.GetWindowRect(hwnd, ctypes.byref(rect)):
+                            scrcpy_x = rect.left
+                            scrcpy_y = rect.top
+                            scrcpy_w = rect.right - rect.left
+                except Exception:
+                    pass
+            else:
+                # Linux (X11) implementation using xdotool and xwininfo
+                try:
+                    # Cari window ID scrcpy_mirror
+                    out_id = subprocess.check_output(["xdotool", "search", "--name", "scrcpy_mirror"], text=True, stderr=subprocess.DEVNULL)
+                    win_ids = [line.strip() for line in out_id.splitlines() if line.strip()]
+                    if win_ids:
+                        target_id = win_ids[0]
+                        # Ambil koordinat jendela
+                        out_info = subprocess.check_output(["xwininfo", "-id", target_id], text=True, stderr=subprocess.DEVNULL)
+                        m_x = re.search(r"Absolute upper-left X:\s+(-?\d+)", out_info)
+                        m_y = re.search(r"Absolute upper-left Y:\s+(-?\d+)", out_info)
+                        m_w = re.search(r"Width:\s+(\d+)", out_info)
+                        if m_x and m_y and m_w:
+                            scrcpy_x = int(m_x.group(1))
+                            scrcpy_y = int(m_y.group(1))
+                            scrcpy_w = int(m_w.group(1))
+                except Exception:
+                    pass
+
+            if scrcpy_x is not None and scrcpy_y is not None:
+                # Target coordinate: Di sebelah kiri jendela scrcpy (scrcpy_x - lebar_controller - offset)
+                # Lebar controller kita adalah 260.
+                target_x = scrcpy_x - 270
+                # Jika terlalu mepet kiri layar, taruh di sebelah kanan (scrcpy_x + scrcpy_w + 10)
+                if target_x < 10:
+                    target_x = scrcpy_x + scrcpy_w + 10
+                
+                # Update geometri controller agar menempel (sticky)
+                self.geometry(f"260x420+{target_x}+{scrcpy_y}")
+        except Exception:
+            pass
+
+        self.after(200, self._track_scrcpy_window)
 
     def _setup_ui(self):
         container = ctk.CTkFrame(self, fg_color="transparent")
