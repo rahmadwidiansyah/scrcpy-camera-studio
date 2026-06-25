@@ -259,7 +259,7 @@ class CameraStudioUI(ctk.CTk):
         self._field(frame, "Audio Source", self.opt_audio_source, 3, 3)
 
         switch_box = ctk.CTkFrame(frame, fg_color="transparent")
-        switch_box.grid(row=4, column=0, columnspan=2, sticky="ew", padx=8, pady=(0, 12))
+        switch_box.grid(row=5, column=0, columnspan=4, sticky="ew", padx=8, pady=(0, 12))
 
         self.chk_mirror = ctk.CTkCheckBox(
             switch_box,
@@ -936,10 +936,6 @@ class MirrorControlCenter(ctk.CTkToplevel):
         self.geometry("260x420")
         self.resizable(False, False)
         self.attributes("-alpha", 0.96)
-        self.attributes("-topmost", True)
-        
-        # Make borderless overlay window
-        self.overrideredirect(True)
         
         # Position next to parent window initially
         parent_x = parent.winfo_x()
@@ -947,11 +943,18 @@ class MirrorControlCenter(ctk.CTkToplevel):
         parent_w = parent.winfo_width()
         self.geometry(f"260x420+{parent_x + parent_w + 10}+{parent_y}")
         
+        self._setup_ui()
+        
+        # Map layouts first, then set borderless attributes
+        self.update()
+        self.overrideredirect(True)
+        self.attributes("-topmost", True)
+        self.lift()
+        
         # Add window drag events
         self.bind("<Button-1>", self._start_drag)
         self.bind("<B1-Motion>", self._on_drag)
         
-        self._setup_ui()
         self._track_scrcpy_window()
 
     def _start_drag(self, event):
