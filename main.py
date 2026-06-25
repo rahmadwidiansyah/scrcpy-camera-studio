@@ -73,11 +73,13 @@ def poll_scrcpy_status(app, scrcpy_manager):
     except Exception:
         return
 
-    is_running = scrcpy_manager.is_running()
-    # Asumsi UI memiliki method untuk update status UI jika scrcpy mati secara tiba-tiba
+    statuses = {
+        "camera": scrcpy_manager.is_running("camera"),
+        "mirror": scrcpy_manager.is_running("mirror")
+    }
     if hasattr(app, 'update_scrcpy_status'):
         try:
-            app.update_scrcpy_status(is_running)
+            app.update_scrcpy_status(statuses)
         except Exception:
             return
     

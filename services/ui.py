@@ -418,27 +418,43 @@ class CameraStudioUI(ctk.CTk):
             self._on_setting_change("target_device", target_serial)
 
     def set_camera_state(self, is_running):
-        previous_state = self._scrcpy_running_ui
-        self._scrcpy_running_ui = is_running
+        # Backward compatibility helper
+        if isinstance(is_running, bool):
+            statuses = {"camera": is_running, "mirror": False}
+        else:
+            statuses = is_running
 
-        if is_running:
-            self.lbl_cam_status.configure(text="Running", text_color="#28a745")
-            self.btn_start.configure(state="disabled")
-            self.btn_mirror.configure(state="disabled")
-            self.btn_stop.configure(state="normal")
-            if not previous_state:
-                self.append_log("scrcpy stream started successfully.")
+        cam_running = statuses.get("camera", False)
+        mir_running = statuses.get("mirror", False)
+
+        # Update status labels / buttons
+        if cam_running and mir_running:
+            self.lbl_cam_status.configure(text="Camera & Mirror Running", text_color="#28a745")
+        elif cam_running:
+            self.lbl_cam_status.configure(text="Camera Running", text_color="#28a745")
+        elif mir_running:
+            self.lbl_cam_status.configure(text="Mirror Running", text_color="#28a745")
         else:
             self.lbl_cam_status.configure(text="Stopped", text_color="#dc3545")
-            self.btn_start.configure(state="normal")
-            self.btn_mirror.configure(state="normal")
-            self.btn_stop.configure(state="disabled")
-            if previous_state:
-                self.append_log("scrcpy stream stopped.")
+
+        self.btn_start.configure(state="disabled" if cam_running else "normal")
+        self.btn_mirror.configure(state="disabled" if mir_running else "normal")
+        self.btn_stop.configure(state="normal" if (cam_running or mir_running) else "disabled")
+
+        # Logging transitions
+        if not hasattr(self, "_prev_statuses"):
+            self._prev_statuses = {"camera": False, "mirror": False}
+        
+        if cam_running != self._prev_statuses.get("camera", False):
+            self.append_log("Camera stream started." if cam_running else "Camera stream stopped.")
+        if mir_running != self._prev_statuses.get("mirror", False):
+            self.append_log("Mirror stream started." if mir_running else "Mirror stream stopped.")
+
+        self._prev_statuses = {"camera": cam_running, "mirror": mir_running}
+        self._scrcpy_running_ui = cam_running or mir_running
 
     def update_scrcpy_status(self, is_running):
-        if self._scrcpy_running_ui != is_running:
-            self.set_camera_state(is_running)
+        self.set_camera_state(is_running)
 
     def show_update_badge(self, show=True):
         if show:

@@ -8,13 +8,13 @@ from config.config import Config
 class ScrcpyManager:
     def __init__(self, logger):
         self.logger = logger
-        self.process = None
+        self.processes = {}  # dict mapping mode (e.g., 'camera', 'mirror') to process
         self.scrcpy_path = Config.get_bin_path("scrcpy")
-        self._last_return_code = None
+        self._last_return_codes = {}
 
     def start(self, settings_data, mode="camera"):
-        if self.is_running():
-            self.logger.warning("Scrcpy sudah berjalan. Mengabaikan perintah Start.")
+        if self.is_running(mode):
+            self.logger.warning(f"Scrcpy mode {mode} sudah berjalan. Mengabaikan perintah Start.")
             return
             
         try:
@@ -81,34 +81,36 @@ class ScrcpyManager:
             self.logger.info(f"Menjalankan: {' '.join(args)}")
 
             # Menjalankan proses scrcpy
-            self.process = subprocess.Popen(
+            process = subprocess.Popen(
                 args,
                 stdout=subprocess.PIPE,
                 stderr=subprocess.STDOUT,
                 text=True,
                 creationflags=creationflags
             )
-            self._last_return_code = None
+            self.processes[mode] = process
+            self._last_return_codes[mode] = None
 
             threading.Thread(
                 target=self._forward_process_output,
-                args=(self.process,),
+                args=(process, mode),
                 daemon=True
             ).start()
 
             time.sleep(0.3)
-            if self.process.poll() is not None:
-                return_code = self.process.returncode
-                self._last_return_code = return_code
-                self.process = None
-                self.logger.error(f"scrcpy berhenti saat start. Exit code: {return_code}")
+            if process.poll() is not None:
+                return_code = process.returncode
+                self._last_return_codes[mode] = return_code
+                if mode in self.processes:
+                    del self.processes[mode]
+                self.logger.error(f"scrcpy {mode} berhenti saat start. Exit code: {return_code}")
                 return
             
             # Log informasi dengan tambahan target device jika ada
-            self.logger.info(f"Kamera scrcpy berhasil dijalankan {'untuk device '+target_serial if target_serial else ''}.")
+            self.logger.info(f"Kamera scrcpy ({mode}) berhasil dijalankan {'untuk device '+target_serial if target_serial else ''}.")
             
         except Exception as e:
-            self.logger.error(f"Gagal menjalankan scrcpy: {e}")
+            self.logger.error(f"Gagal menjalankan scrcpy {mode}: {e}")
 
     def list_cameras(self, target_serial=""):
         """Mengambil daftar kamera dari scrcpy --list-cameras."""
@@ -163,7 +165,7 @@ class ScrcpyManager:
 
         return cameras
 
-    def _forward_process_output(self, process):
+    def _forward_process_output(self, process, mode):
         """Meneruskan output scrcpy ke log aplikasi agar error tidak tersembunyi."""
         if process.stdout is None:
             return
@@ -171,16 +173,22 @@ class ScrcpyManager:
             for line in process.stdout:
                 message = line.strip()
                 if message:
-                    self.logger.info(f"scrcpy: {message}")
+                    self.logger.info(f"scrcpy ({mode}): {message}")
         except Exception:
             pass
 
-    
-    def stop(self):
-        if self.is_running():
-            self.logger.info("Menghentikan proses kamera scrcpy...")
-            proc = self.process
-            self.process = None # Clear immediately to let GUI updates reflect state
+    def stop(self, mode=None):
+        if mode is None:
+            # Hentikan semua session jika mode tidak ditentukan
+            modes = list(self.processes.keys())
+            for m in modes:
+                self.stop(m)
+            return
+
+        if self.is_running(mode):
+            self.logger.info(f"Menghentikan proses scrcpy ({mode})...")
+            proc = self.processes[mode]
+            del self.processes[mode]
             
             def terminate_worker():
                 try:
@@ -192,21 +200,27 @@ class ScrcpyManager:
                         proc.kill()
                         proc.wait()
                 except Exception as e:
-                    self.logger.error(f"Error terminating scrcpy process: {e}")
+                    self.logger.error(f"Error terminating scrcpy ({mode}) process: {e}")
                     
             threading.Thread(target=terminate_worker, daemon=True).start()
-            self.logger.info("Kamera scrcpy berhasil dihentikan.")
+            self.logger.info(f"Proses scrcpy ({mode}) dihentikan.")
 
-    def is_running(self):
+    def is_running(self, mode=None):
         """Mengecek apakah proses scrcpy saat ini sedang berjalan."""
-        if self.process is None:
+        if mode is None:
+            # Jika mode tidak dispesifikasikan, return True jika ada session berjalan
+            return any(self.is_running(m) for m in list(self.processes.keys()))
+
+        if mode not in self.processes:
             return False
             
+        process = self.processes[mode]
         # poll() mengembalikan None jika proses masih berjalan
         # Jika mengembalikan angka (return code), berarti proses sudah berhenti
-        if self.process.poll() is not None:
-            self._last_return_code = self.process.returncode
-            self.process = None # Bersihkan referensi proses yang sudah mati
+        if process.poll() is not None:
+            self._last_return_codes[mode] = process.returncode
+            if mode in self.processes:
+                del self.processes[mode] # Bersihkan referensi proses yang sudah mati
             return False
             
         return True
