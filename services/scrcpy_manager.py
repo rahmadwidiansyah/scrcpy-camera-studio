@@ -161,10 +161,14 @@ class ScrcpyManager:
         """Meneruskan output scrcpy ke log aplikasi agar error tidak tersembunyi."""
         if process.stdout is None:
             return
-        for line in process.stdout:
-            message = line.strip()
-            if message:
-                self.logger.info(f"scrcpy: {message}")
+        try:
+            for line in process.stdout:
+                message = line.strip()
+                if message:
+                    self.logger.info(f"scrcpy: {message}")
+        except Exception:
+            pass
+
     
     def stop(self):
         if self.is_running():

@@ -165,7 +165,7 @@ def main():
             ))
 
     app.set_callbacks(
-        start_cb=lambda: scrcpy.start(settings.current_settings),
+        start_cb=lambda: threading.Thread(target=lambda: scrcpy.start(settings.current_settings), daemon=True).start(),
         stop_cb=scrcpy.stop,
         setting_change_cb=settings.set,
         # Arahkan ke start_install sungguhan dan lemparkan callback on_install_done
