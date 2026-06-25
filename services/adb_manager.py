@@ -1,7 +1,7 @@
 import subprocess
 import os
-from config import Config
-from device import AndroidDevice
+from config.config import Config
+from services.device import AndroidDevice
 
 class ADBManager:
     def __init__(self, logger=None):

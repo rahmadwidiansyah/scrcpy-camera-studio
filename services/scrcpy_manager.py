@@ -3,7 +3,7 @@ import os
 import re
 import threading
 import time
-from config import Config
+from config.config import Config
 
 class ScrcpyManager:
     def __init__(self, logger):
@@ -169,9 +169,22 @@ class ScrcpyManager:
     def stop(self):
         if self.is_running():
             self.logger.info("Menghentikan proses kamera scrcpy...")
-            self.process.terminate()
-            self.process.wait()
-            self.process = None
+            proc = self.process
+            self.process = None # Clear immediately to let GUI updates reflect state
+            
+            def terminate_worker():
+                try:
+                    proc.terminate()
+                    # Wait up to 3 seconds for graceful terminate, fallback to kill
+                    try:
+                        proc.wait(timeout=3)
+                    except subprocess.TimeoutExpired:
+                        proc.kill()
+                        proc.wait()
+                except Exception as e:
+                    self.logger.error(f"Error terminating scrcpy process: {e}")
+                    
+            threading.Thread(target=terminate_worker, daemon=True).start()
             self.logger.info("Kamera scrcpy berhasil dihentikan.")
 
     def is_running(self):
@@ -187,3 +200,61 @@ class ScrcpyManager:
             return False
             
         return True
+
+    def get_local_version(self):
+        """Membaca versi scrcpy lokal dengan menjalankan 'scrcpy --version'."""
+        scrcpy_path = Config.get_bin_path("scrcpy")
+        if not scrcpy_path or not os.path.exists(scrcpy_path):
+            return None
+        try:
+            startupinfo = None
+            if os.name == 'nt':
+                creationflags = subprocess.CREATE_NO_WINDOW
+            else:
+                creationflags = 0
+
+            result = subprocess.run(
+                [scrcpy_path, "--version"],
+                stdout=subprocess.PIPE,
+                stderr=subprocess.PIPE,
+                text=True,
+                creationflags=creationflags,
+                timeout=3
+            )
+            for line in result.stdout.splitlines():
+                if "scrcpy" in line.lower():
+                    parts = line.split()
+                    for part in parts:
+                        if part and part[0].isdigit():
+                            return part.strip()
+        except Exception as e:
+            self.logger.error(f"Gagal mendeteksi versi scrcpy lokal: {e}")
+        return None
+
+    def get_latest_online_version(self):
+        """Mengambil info rilis terbaru dari repo Genymobile/scrcpy di GitHub API."""
+        try:
+            import urllib.request
+            import json
+            req = urllib.request.Request(
+                "https://api.github.com/repos/Genymobile/scrcpy/releases/latest",
+                headers={"User-Agent": "Camera-Studio-UpdateChecker"}
+            )
+            with urllib.request.urlopen(req, timeout=5) as response:
+                data = json.loads(response.read().decode("utf-8"))
+                tag_name = data.get("tag_name", "").strip()
+                latest_ver = tag_name.lstrip("v")
+                
+                # Cari URL download zip 64-bit untuk Windows
+                download_url = None
+                assets = data.get("assets", [])
+                for asset in assets:
+                    name = asset.get("name", "")
+                    if "win64" in name and name.endswith(".zip"):
+                        download_url = asset.get("browser_download_url")
+                        break
+                        
+                return latest_ver, download_url
+        except Exception as e:
+            self.logger.error(f"Gagal mengambil versi scrcpy terbaru dari GitHub: {e}")
+        return None, None

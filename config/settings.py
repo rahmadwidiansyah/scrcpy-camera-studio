@@ -1,21 +1,14 @@
 import json
 import os
-import sys
 
 class SettingsManager:
     def __init__(self, logger, config_file="settings.json"):
         self.logger = logger
         
-        # --- PENYESUAIAN PYINSTALLER UNTUK SETTINGS.JSON ---
+        # --- PENYESUAIAN SETTINGS.JSON AGAR DI SIMPAN DI APPDATA ---
         if not os.path.isabs(config_file):
-            if getattr(sys, 'frozen', False):
-                # Jika jalan sebagai exe, simpan settings.json persis di sebelah file .exe
-                base_dir = os.path.dirname(sys.executable)
-            else:
-                # Jika jalan sebagai script python, simpan sejajar dengan script
-                base_dir = os.path.dirname(os.path.abspath(__file__))
-            
-            config_file = os.path.join(base_dir, config_file)
+            from config.config import Config
+            config_file = os.path.join(Config.SETTINGS_DIR, config_file)
             
         self.config_file = config_file
         

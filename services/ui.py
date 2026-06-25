@@ -1,12 +1,21 @@
 import customtkinter as ctk
 import threading
+import os
+from updater.installer_manager import UpdateDownloader
 
 
 class CameraStudioUI(ctk.CTk):
+    def report_callback_exception(self, exc, val, tb):
+        import logging
+        err_logger = logging.getLogger("CameraStudio.exception")
+        err_logger.error("Uncaught exception in GUI callback", exc_info=(exc, val, tb))
+
     def __init__(self):
         super().__init__()
 
-        self.title("Camera Studio")
+        from config.version import current_version
+        self.current_version = current_version
+        self.title(f"Camera Studio v{current_version}")
         self.geometry("760x760")
         self.minsize(680, 620)
 
@@ -20,6 +29,7 @@ class CameraStudioUI(ctk.CTk):
         self.camera_options = []
         self._scrcpy_running_ui = False
         self._ui_thread_id = threading.get_ident()
+        self.update_result = None
 
         self._setup_ui()
 
@@ -84,7 +94,23 @@ class CameraStudioUI(ctk.CTk):
         title_box = ctk.CTkFrame(header, fg_color="transparent")
         title_box.grid(row=0, column=0, sticky="w", padx=14, pady=12)
 
-        ctk.CTkLabel(title_box, text="Camera Studio", font=("Arial", 20, "bold")).pack(anchor="w")
+        title_row = ctk.CTkFrame(title_box, fg_color="transparent")
+        title_row.pack(anchor="w")
+
+        ctk.CTkLabel(title_row, text="Camera Studio", font=("Arial", 20, "bold")).pack(side="left")
+        
+        self.badge_update = ctk.CTkLabel(
+            title_row,
+            text="🔴 Update",
+            font=("Arial", 10, "bold"),
+            text_color="#ffffff",
+            fg_color="#dc3545",
+            corner_radius=8,
+            height=18,
+            cursor="hand2"
+        )
+        # Badge click event binding is handled externally by UpdatePresenter
+
         self.lbl_cam_status = ctk.CTkLabel(
             title_box,
             text="Stopped",
@@ -401,6 +427,19 @@ class CameraStudioUI(ctk.CTk):
         if self._scrcpy_running_ui != is_running:
             self.set_camera_state(is_running)
 
+    def show_update_badge(self, show=True):
+        if show:
+            self.badge_update.pack(side="left", padx=(8, 0))
+        else:
+            self.badge_update.pack_forget()
+
+    def handle_update_result(self, result):
+        self.update_result = result
+        is_available = result.get("is_update_available", False)
+        self.show_update_badge(is_available)
+
+
+
     def _on_start_clicked(self):
         if self.start_callback:
             self.start_callback()
@@ -443,6 +482,352 @@ class CameraStudioUI(ctk.CTk):
         else:
             self.append_log(f"Error: Required dependency {dep_name.upper()} is missing.")
         label.configure(text=text, text_color=color)
+
+    def show_scrcpy_update_prompt(self, local_ver, latest_ver, download_url, installer):
+        dialog = ctk.CTkToplevel(self)
+        dialog.title("scrcpy Update Available")
+        dialog.geometry("450x300")
+        dialog.resizable(False, False)
+
+        dialog.transient(self)
+        dialog.grab_set()
+        dialog.focus_set()
+
+        # Center dialog
+        parent_x = self.winfo_x()
+        parent_y = self.winfo_y()
+        parent_w = self.winfo_width()
+        parent_h = self.winfo_height()
+        x = parent_x + (parent_w - 450) // 2
+        y = parent_y + (parent_h - 300) // 2
+        dialog.geometry(f"450x300+{x}+{y}")
+
+        container = ctk.CTkFrame(dialog, fg_color="transparent")
+        container.pack(fill="both", expand=True, padx=20, pady=20)
+
+        lbl_title = ctk.CTkLabel(
+            container, 
+            text="scrcpy Update Available!", 
+            font=("Arial", 16, "bold")
+        )
+        lbl_title.pack(anchor="w", pady=(0, 10))
+
+        lbl_msg = ctk.CTkLabel(
+            container, 
+            text=f"A new version of scrcpy is available.\n\nInstalled Version:  {local_ver}\nLatest Version:     {latest_ver}\n\nWould you like to download and update scrcpy now?", 
+            font=("Arial", 12),
+            justify="left",
+            anchor="w"
+        )
+        lbl_msg.pack(anchor="w", pady=(0, 20))
+
+        btn_frame = ctk.CTkFrame(container, fg_color="transparent")
+        btn_frame.pack(fill="x", side="bottom")
+
+        def on_later():
+            dialog.destroy()
+
+        def on_update():
+            # Clear container to render download progress
+            for child in container.winfo_children():
+                child.destroy()
+
+            lbl_dl_title = ctk.CTkLabel(
+                container, 
+                text="Downloading scrcpy update...", 
+                font=("Arial", 16, "bold")
+            )
+            lbl_dl_title.pack(anchor="w", pady=(0, 15))
+
+            progress_bar = ctk.CTkProgressBar(container)
+            progress_bar.pack(fill="x", pady=(0, 8))
+            progress_bar.set(0.0)
+
+            lbl_status = ctk.CTkLabel(
+                container, 
+                text="Connecting to download server...", 
+                font=("Arial", 12),
+                anchor="w"
+            )
+            lbl_status.pack(anchor="w", pady=(0, 20))
+
+            btn_dl_frame = ctk.CTkFrame(container, fg_color="transparent")
+            btn_dl_frame.pack(fill="x", side="bottom")
+
+            import logging
+            scrcpy_dl_logger = logging.getLogger("CameraStudio.download")
+            scrcpy_dl_logger.info(f"Memulai unduhan update scrcpy dari: {download_url}")
+            downloader = UpdateDownloader(download_url, scrcpy_dl_logger)
+            is_currently_paused = False
+
+            def toggle_pause():
+                nonlocal is_currently_paused
+                if is_currently_paused:
+                    downloader.resume()
+                    is_currently_paused = False
+                    btn_pause.configure(text="Pause", fg_color=None, border_width=1, text_color=("#111318", "#f2f2f2"))
+                    lbl_dl_title.configure(text="Downloading scrcpy update...")
+                else:
+                    downloader.pause()
+                    is_currently_paused = True
+                    btn_pause.configure(text="Resume", fg_color="#198754", hover_color="#157347", border_width=0, text_color="#ffffff")
+                    lbl_dl_title.configure(text="Downloading Paused")
+                    lbl_status.configure(text="Download paused by user.")
+
+            btn_cancel = ctk.CTkButton(
+                btn_dl_frame,
+                text="Cancel",
+                width=100,
+                fg_color="transparent",
+                hover_color=("#dc3545", "#dc3545"),
+                border_width=1,
+                text_color=("#111318", "#f2f2f2"),
+                command=downloader.cancel
+            )
+            btn_cancel.pack(side="right")
+
+            btn_pause = ctk.CTkButton(
+                btn_dl_frame,
+                text="Pause",
+                width=100,
+                fg_color="transparent",
+                hover_color=("#e0e0e0", "#2a2a2a"),
+                border_width=1,
+                text_color=("#111318", "#f2f2f2"),
+                command=toggle_pause
+            )
+            btn_pause.pack(side="right", padx=(0, 10))
+
+            def progress_cb(downloaded, total):
+                if total > 0:
+                    pct = int((downloaded / total) * 100)
+                    dl_mb = downloaded / (1024 * 1024)
+                    tot_mb = total / (1024 * 1024)
+                    status_text = f"Downloaded {dl_mb:.2f} MB of {tot_mb:.2f} MB ({pct}%)"
+                    ratio = downloaded / total
+                else:
+                    dl_mb = downloaded / (1024 * 1024)
+                    status_text = f"Downloaded {dl_mb:.2f} MB"
+                    ratio = 0.5
+
+                if not is_currently_paused:
+                    dialog.after(0, lambda: lbl_status.configure(text=status_text))
+                    dialog.after(0, lambda: progress_bar.set(ratio))
+
+            def completion_cb(status, dest_path):
+                if self.logger:
+                    if status == "Success":
+                        self.logger.info(f"Pembaruan scrcpy sukses diunduh ke: {dest_path}")
+                    elif status == "Cancelled":
+                        self.logger.info("Unduhan pembaruan scrcpy dibatalkan.")
+                    else:
+                        self.logger.error(f"Unduhan pembaruan scrcpy gagal: {status}")
+
+                def update_ui():
+                    if status == "Success":
+                        # Render extraction view
+                        for child in container.winfo_children():
+                            child.destroy()
+
+                        lbl_ext_title = ctk.CTkLabel(
+                            container, 
+                            text="Extracting scrcpy...", 
+                            font=("Arial", 16, "bold")
+                        )
+                        lbl_ext_title.pack(anchor="w", pady=(0, 15))
+
+                        ext_bar = ctk.CTkProgressBar(container)
+                        ext_bar.pack(fill="x", pady=(0, 8))
+                        ext_bar.configure(mode="indeterminate")
+                        ext_bar.start()
+
+                        lbl_ext_status = ctk.CTkLabel(
+                            container, 
+                            text="Extracting new binaries to runtime/scrcpy...", 
+                            font=("Arial", 12),
+                            anchor="w"
+                        )
+                        lbl_ext_status.pack(anchor="w", pady=(0, 20))
+
+                        def on_extract_complete(result_status):
+                            if self.logger:
+                                if result_status == "Success":
+                                    self.logger.info("Ekstraksi pembaruan scrcpy berhasil.")
+                                else:
+                                    self.logger.error(f"Ekstraksi pembaruan scrcpy gagal: {result_status}")
+                            def show_extract_result():
+                                for child in container.winfo_children():
+                                    child.destroy()
+
+                                if result_status == "Success":
+                                    lbl_success = ctk.CTkLabel(
+                                        container, 
+                                        text="scrcpy Updated Successfully!", 
+                                        font=("Arial", 16, "bold"),
+                                        text_color="#28a745"
+                                    )
+                                    lbl_success.pack(anchor="w", pady=(0, 15))
+
+                                    lbl_desc = ctk.CTkLabel(
+                                        container, 
+                                        text=f"The new scrcpy v{latest_ver} binary has been successfully installed in runtime/scrcpy.", 
+                                        font=("Arial", 12),
+                                        justify="left",
+                                        wrap=400
+                                    )
+                                    lbl_desc.pack(anchor="w", pady=(0, 20))
+
+                                    btn_ok = ctk.CTkButton(
+                                        container,
+                                        text="Close",
+                                        width=100,
+                                        fg_color="#0d6efd",
+                                        hover_color="#0b5ed7",
+                                        command=dialog.destroy
+                                    )
+                                    btn_ok.pack(side="right")
+
+                                    # Update UI dependency statuses on main screen!
+                                    from config.config import Config
+                                    self.update_dependency_status("scrcpy", Config.check_dependency("scrcpy"))
+                                    self.update_dependency_status("adb", Config.check_dependency("adb"))
+                                    self.update_dependency_status("SDL2", Config.check_dependency("sdl2"))
+                                else:
+                                    lbl_fail = ctk.CTkLabel(
+                                        container, 
+                                        text="Extraction Failed!", 
+                                        font=("Arial", 16, "bold"),
+                                        text_color="#dc3545"
+                                    )
+                                    lbl_fail.pack(anchor="w", pady=(0, 15))
+
+                                    lbl_desc = ctk.CTkLabel(
+                                        container, 
+                                        text=f"An error occurred while extracting scrcpy update:\n\n{result_status}", 
+                                        font=("Arial", 12),
+                                        justify="left",
+                                        wrap=400
+                                    )
+                                    lbl_desc.pack(anchor="w", pady=(0, 20))
+
+                                    btn_ok = ctk.CTkButton(
+                                        container,
+                                        text="Close",
+                                        width=100,
+                                        fg_color=("#eaeaea", "#2b2b2b"),
+                                        border_width=1,
+                                        text_color=("#111318", "#f2f2f2"),
+                                        command=dialog.destroy
+                                    )
+                                    btn_ok.pack(side="right")
+
+                            dialog.after(0, show_extract_result)
+
+                        # Extract in background thread
+                        def run_extraction():
+                            try:
+                                import zipfile
+                                import shutil
+                                from config.config import Config
+                                
+                                scrcpy_dir = os.path.join(Config.BIN_DIR, "scrcpy")
+                                temp_extract = os.path.join(Config.CACHE_DIR, "scrcpy_update_extract")
+                                
+                                if os.path.exists(temp_extract):
+                                    shutil.rmtree(temp_extract)
+                                os.makedirs(temp_extract, exist_ok=True)
+                                
+                                with zipfile.ZipFile(dest_path, 'r') as zip_ref:
+                                    zip_ref.extractall(temp_extract)
+                                    
+                                if os.path.exists(scrcpy_dir):
+                                    shutil.rmtree(scrcpy_dir)
+                                os.makedirs(scrcpy_dir, exist_ok=True)
+                                
+                                # Move files
+                                items = os.listdir(temp_extract)
+                                if len(items) == 1 and os.path.isdir(os.path.join(temp_extract, items[0])):
+                                    inner_dir = os.path.join(temp_extract, items[0])
+                                    for x_item in os.listdir(inner_dir):
+                                        shutil.move(os.path.join(inner_dir, x_item), os.path.join(scrcpy_dir, x_item))
+                                else:
+                                    for x_item in items:
+                                        shutil.move(os.path.join(temp_extract, x_item), os.path.join(scrcpy_dir, x_item))
+                                        
+                                shutil.rmtree(temp_extract, ignore_errors=True)
+                                try:
+                                    os.remove(dest_path)
+                                except Exception:
+                                    pass
+                                on_extract_complete("Success")
+                            except Exception as e:
+                                on_extract_complete(str(e))
+
+                        threading.Thread(target=run_extraction, daemon=True).start()
+
+                    elif status == "Cancelled":
+                        dialog.destroy()
+                    else:
+                        for child in container.winfo_children():
+                            child.destroy()
+                        lbl_fail = ctk.CTkLabel(
+                            container, 
+                            text="Download Failed!", 
+                            font=("Arial", 16, "bold"),
+                            text_color="#dc3545"
+                        )
+                        lbl_fail.pack(anchor="w", pady=(0, 15))
+                        lbl_desc = ctk.CTkLabel(
+                            container, 
+                            text=f"Failed to download scrcpy update:\n\n{status}", 
+                            font=("Arial", 12),
+                            justify="left",
+                            wrap=400
+                        )
+                        lbl_desc.pack(anchor="w", pady=(0, 20))
+                        btn_ok = ctk.CTkButton(
+                            container,
+                            text="Close",
+                            width=100,
+                            fg_color=("#eaeaea", "#2b2b2b"),
+                            border_width=1,
+                            text_color=("#111318", "#f2f2f2"),
+                            command=dialog.destroy
+                        )
+                        btn_ok.pack(side="right")
+
+                dialog.after(0, update_ui)
+
+            def on_window_close():
+                downloader.cancel()
+                dialog.destroy()
+
+            dialog.protocol("WM_DELETE_WINDOW", on_window_close)
+            downloader.start(progress_cb, completion_cb)
+
+        btn_later = ctk.CTkButton(
+            btn_frame,
+            text="Later",
+            width=80,
+            fg_color="transparent",
+            hover_color=("#e0e0e0", "#2a2a2a"),
+            border_width=1,
+            text_color=("#111318", "#f2f2f2"),
+            command=on_later
+        )
+        btn_later.pack(side="right")
+
+        btn_update = ctk.CTkButton(
+            btn_frame,
+            text="Update",
+            width=100,
+            fg_color="#0d6efd",
+            hover_color="#0b5ed7",
+            text_color="#ffffff",
+            font=("Arial", 12, "bold"),
+            command=on_update
+        )
+        btn_update.pack(side="right", padx=(0, 10))
 
     def _rotate_to_label(self, value):
         value_map = {1: 90, 2: 180, 3: 270, "1": 90, "2": 180, "3": 270}
