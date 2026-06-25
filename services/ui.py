@@ -935,15 +935,48 @@ class MirrorControlCenter(ctk.CTkToplevel):
         self.title("Mirror Control Center")
         self.geometry("260x420")
         self.resizable(False, False)
-        self.attributes("-alpha", 0.98)
+        self.attributes("-alpha", 0.96)
+        self.attributes("-topmost", True)
         
-        # Position next to parent window
+        # Make borderless overlay window
+        self.overrideredirect(True)
+        
+        # Position next to parent window initially
         parent_x = parent.winfo_x()
         parent_y = parent.winfo_y()
         parent_w = parent.winfo_width()
         self.geometry(f"260x420+{parent_x + parent_w + 10}+{parent_y}")
         
+        # Add window drag events
+        self.bind("<Button-1>", self._start_drag)
+        self.bind("<B1-Motion>", self._on_drag)
+        
         self._setup_ui()
+        self._track_scrcpy_window()
+
+    def _start_drag(self, event):
+        self._drag_x = event.x
+        self._drag_y = event.y
+
+    def _on_drag(self, event):
+        x = self.winfo_x() - self._drag_x + event.x
+        y = self.winfo_y() - self._drag_y + event.y
+        self.geometry(f"+{x}+{y}")
+
+    def _track_scrcpy_window(self):
+        """Periode berkala untuk melacak dan mencari posisi jendela scrcpy, jika terdeteksi, posisikan controller di sampingnya."""
+        if not self.winfo_exists():
+            return
+        
+        # Jika scrcpy sudah mati, hancurkan control center ini
+        if not self.scrcpy_manager.is_running("mirror"):
+            self.destroy()
+            return
+            
+        # Di Linux/Windows kita bisa melakukan kueri window manager / xdotool secara opsional, 
+        # namun untuk stabilitas cross-platform tanpa dependency eksternal, controller ini
+        # dapat digeser manual oleh user dan akan menempel di paling depan (topmost) di layar.
+        self.after(1000, self._track_scrcpy_window)
 
     def _setup_ui(self):
         container = ctk.CTkFrame(self, fg_color="transparent")
