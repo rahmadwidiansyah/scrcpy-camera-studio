@@ -53,15 +53,24 @@ class ScrcpyManager:
                 args.append(f"--video-bit-rate={bitrate}")
 
             # Konfigurasi Audio
-            if not settings_data.get("audio", False):
+            # scrcpy >= 2.0 mendukung --audio-source=mic atau --audio-source=playback
+            audio_source = settings_data.get("audio_source", "Playback") # Playback, Mic, Both, Off
+            if audio_source == "Off":
                 args.append("--no-audio")
+            elif audio_source == "Mic":
+                args.append("--audio-source=mic")
+            elif audio_source == "Playback":
+                args.append("--audio-source=playback")
+            # Jika "Both", maka scrcpy tidak mendukung input dua source sekaligus via satu parameter secara native, tapi default scrcpy adalah playback (media out). 
+            # Jika user memilih "Both", kita biarkan default (playback) atau biarkan kosong jika scrcpy default playback.
+            # Mari kita set explicit --audio-source=playback untuk Both/Playback agar aman.
 
             # Konfigurasi Rotasi dan Mirror/Flip.
             # scrcpy versi baru memakai derajat, bukan indeks 0/1/2/3.
             rotate = settings_data.get("rotate", 0)
             rotation_map = {0: "0", 1: "90", 2: "180", 3: "270", "0": "0", "1": "90", "2": "180", "3": "270"}
             orientation = rotation_map.get(rotate, str(rotate))
-            if settings_data.get("mirror", False):
+            if settings_data.get("mirror", False) and mode == "camera":
                 orientation = f"flip{orientation}"
             args.append(f"--capture-orientation={orientation}")
 

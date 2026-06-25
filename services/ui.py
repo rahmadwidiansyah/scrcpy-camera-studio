@@ -51,8 +51,8 @@ class CameraStudioUI(ctk.CTk):
         self.opt_bit.set(str(settings_data.get("bitrate", "8M")))
         self.opt_rot.set(self._rotate_to_label(settings_data.get("rotate", 0)))
         self.opt_preview.set(str(settings_data.get("preview_mode", "Normal Window")))
+        self.opt_audio_source.set(str(settings_data.get("audio_source", "Playback")))
 
-        self.chk_audio.select() if settings_data.get("audio", False) else self.chk_audio.deselect()
         self.chk_mirror.select() if settings_data.get("mirror", False) else self.chk_mirror.deselect()
 
     def append_log(self, message):
@@ -251,18 +251,19 @@ class CameraStudioUI(ctk.CTk):
         )
         self._field(frame, "Preview", self.opt_preview, 3, 1, columnspan=2)
 
-        switch_box = ctk.CTkFrame(frame, fg_color="transparent")
-        switch_box.grid(row=4, column=3, sticky="ew", padx=8, pady=(0, 12))
-        self.chk_audio = ctk.CTkCheckBox(
-            switch_box,
-            text="Audio",
-            command=lambda: self._on_setting_change("audio", bool(self.chk_audio.get()))
+        self.opt_audio_source = ctk.CTkOptionMenu(
+            frame,
+            values=["Playback", "Mic", "Both", "Off"],
+            command=lambda value: self._on_setting_change("audio_source", value)
         )
-        self.chk_audio.pack(side="left", padx=(0, 12))
+        self._field(frame, "Audio Source", self.opt_audio_source, 3, 3)
+
+        switch_box = ctk.CTkFrame(frame, fg_color="transparent")
+        switch_box.grid(row=4, column=0, columnspan=2, sticky="ew", padx=8, pady=(0, 12))
 
         self.chk_mirror = ctk.CTkCheckBox(
             switch_box,
-            text="Mirror",
+            text="Mirror/Flip Camera",
             command=lambda: self._on_setting_change("mirror", bool(self.chk_mirror.get()))
         )
         self.chk_mirror.pack(side="left")
