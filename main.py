@@ -169,13 +169,11 @@ def main():
     def on_scrcpy_start(mode="camera"):
         if mode == "mirror":
             from services.ui import MirrorControlCenter
-            # Create the dialog window frame synchronously so winfo_id() is ready
             control_center = MirrorControlCenter(app, scrcpy)
             app.mirror_control_center = control_center
-            parent_id = control_center.get_embed_frame_id()
             
             def start_worker():
-                scrcpy.start(settings.current_settings, mode="mirror", parent_window_id=parent_id)
+                scrcpy.start(settings.current_settings, mode="mirror")
             threading.Thread(target=start_worker, daemon=True).start()
         else:
             threading.Thread(target=lambda: scrcpy.start(settings.current_settings, mode="camera"), daemon=True).start()

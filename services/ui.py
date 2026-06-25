@@ -932,41 +932,26 @@ class MirrorControlCenter(ctk.CTkToplevel):
         self.parent = parent
         self.scrcpy_manager = scrcpy_manager
         
-        self.title("Screen Mirror Frame Viewer & Controls")
-        self.geometry("780x520")
-        self.resizable(True, True)
+        self.title("Mirror Control Center")
+        self.geometry("260x420")
+        self.resizable(False, False)
         self.attributes("-alpha", 0.98)
         
         # Position next to parent window
         parent_x = parent.winfo_x()
         parent_y = parent.winfo_y()
         parent_w = parent.winfo_width()
-        self.geometry(f"780x520+{parent_x + parent_w + 10}+{parent_y}")
+        self.geometry(f"260x420+{parent_x + parent_w + 10}+{parent_y}")
         
         self._setup_ui()
-        
-    def get_embed_frame_id(self):
-        # Force window manager initialization to register the native window ID
-        self.update()
-        return self.embed_frame.winfo_id()
 
     def _setup_ui(self):
-        # Main layout frame: Left is scrcpy view frame, Right is control center
-        main_layout = ctk.CTkFrame(self, fg_color="transparent")
-        main_layout.pack(fill="both", expand=True, padx=8, pady=8)
-        
-        # LEFT: The scrcpy container (iframe behavior) - standard tk Frame for native X11 embedding compatibility
-        import tkinter as tk
-        self.embed_frame = tk.Frame(main_layout, bg="#000000")
-        self.embed_frame.pack(side="left", fill="both", expand=True, padx=(0, 8), pady=4)
-
-        # RIGHT: Controls Panel
-        container = ctk.CTkFrame(main_layout, width=240, fg_color="transparent")
-        container.pack(side="right", fill="y", padx=4, pady=4)
+        container = ctk.CTkFrame(self, fg_color="transparent")
+        container.pack(fill="both", expand=True, padx=12, pady=12)
         
         lbl_title = ctk.CTkLabel(
             container, 
-            text="📺 Control Center", 
+            text="📺 Mirror Control Center", 
             font=("Arial", 14, "bold")
         )
         lbl_title.pack(anchor="w", pady=(0, 10))
