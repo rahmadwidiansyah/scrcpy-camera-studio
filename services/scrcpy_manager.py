@@ -76,14 +76,16 @@ class ScrcpyManager:
                 args.append(f"--capture-orientation={orientation}")
 
             # Implementasi Preview Mode
-            preview_mode = settings_data.get("preview_mode", "Normal Window")
-            if preview_mode == "Borderless":
-                args.append("--window-borderless")
-            elif preview_mode == "Always On Top":
-                args.append("--always-on-top")
-            elif preview_mode == "Hidden Preview":
-                args.append("--no-window")
-            # Jika "Normal Window", kita tidak perlu menambahkan argumen apa pun (default scrcpy)
+            # Hanya berlaku untuk mode camera.
+            if mode == "camera":
+                preview_mode = settings_data.get("preview_mode", "Normal Window")
+                if preview_mode == "Borderless":
+                    args.append("--window-borderless")
+                elif preview_mode == "Always On Top":
+                    args.append("--always-on-top")
+                elif preview_mode == "Hidden Preview":
+                    args.append("--no-window")
+                # Jika "Normal Window", kita tidak perlu menambahkan argumen apa pun (default scrcpy)
 
             # Menyembunyikan jendela console bawaan di Windows
             creationflags = subprocess.CREATE_NO_WINDOW if os.name == 'nt' else 0

@@ -887,6 +887,45 @@ class CameraStudioUI(ctk.CTk):
         return "[error]" in lowered or "error:" in lowered or "gagal" in lowered or "failed" in lowered
 
 
+class ToolTip:
+    def __init__(self, widget, text):
+        self.widget = widget
+        self.text = text
+        self.tip_window = None
+        self.widget.bind("<Enter>", self.show_tip)
+        self.widget.bind("<Leave>", self.hide_tip)
+
+    def show_tip(self, event=None):
+        if self.tip_window or not self.text:
+            return
+        x, y, cx, cy = self.widget.bbox("insert")
+        x = x + self.widget.winfo_rootx() + 25
+        y = y + self.widget.winfo_rooty() + 25
+        self.tip_window = tw = ctk.CTkToplevel(self.widget)
+        tw.wm_overrideredirect(1)
+        tw.wm_geometry(f"+{x}+{y}")
+        tw.attributes("-topmost", True)
+        
+        label = ctk.CTkLabel(
+            tw, 
+            text=self.text, 
+            justify="left",
+            fg_color="#333333", 
+            text_color="#ffffff",
+            corner_radius=4,
+            padx=6,
+            pady=4,
+            font=("Arial", 10)
+        )
+        label.pack(ipadx=1)
+
+    def hide_tip(self, event=None):
+        tw = self.tip_window
+        self.tip_window = None
+        if tw:
+            tw.destroy()
+
+
 class MirrorControlCenter(ctk.CTkToplevel):
     def __init__(self, parent, scrcpy_manager):
         super().__init__(parent)
@@ -894,7 +933,7 @@ class MirrorControlCenter(ctk.CTkToplevel):
         self.scrcpy_manager = scrcpy_manager
         
         self.title("Mirror Control Center")
-        self.geometry("260x340")
+        self.geometry("260x360")
         self.resizable(True, True)
         self.attributes("-alpha", 0.95)
         
@@ -902,7 +941,7 @@ class MirrorControlCenter(ctk.CTkToplevel):
         parent_x = parent.winfo_x()
         parent_y = parent.winfo_y()
         parent_w = parent.winfo_width()
-        self.geometry(f"260x340+{parent_x + parent_w + 10}+{parent_y}")
+        self.geometry(f"260x360+{parent_x + parent_w + 10}+{parent_y}")
         
         self._setup_ui()
         
@@ -912,7 +951,7 @@ class MirrorControlCenter(ctk.CTkToplevel):
         
         lbl_title = ctk.CTkLabel(
             container, 
-            text="📺 Mirror Controls", 
+            text="📺 Mirror Control Center", 
             font=("Arial", 14, "bold")
         )
         lbl_title.pack(anchor="w", pady=(0, 10))
@@ -925,40 +964,49 @@ class MirrorControlCenter(ctk.CTkToplevel):
         self.vol_slider.set(80)
         self.vol_slider.pack(side="right", fill="x", expand=True, padx=(8, 0))
 
-        # Shortcuts quick info
-        shortcut_frame = ctk.CTkFrame(container, corner_radius=6)
-        shortcut_frame.pack(fill="both", expand=True, pady=6)
+        # Command Quick Buttons Frame
+        cmd_frame = ctk.CTkFrame(container, fg_color="transparent")
+        cmd_frame.pack(fill="x", pady=6)
         
-        lbl_shortcut_title = ctk.CTkLabel(shortcut_frame, text="Useful Shortcuts (Active Window):", font=("Arial", 10, "bold"))
-        lbl_shortcut_title.pack(anchor="w", padx=6, pady=2)
-        
-        shortcuts = [
-            ("Alt + F", "Toggle Fullscreen"),
-            ("Alt + R", "Rotate Display"),
-            ("Alt + H", "Press HOME"),
-            ("Alt + B", "Press BACK"),
-            ("Alt + P", "Toggle Power State"),
-            ("Alt + Up/Down", "Volume Up/Down"),
-            ("Alt + G", "Resize Window (1:1)")
-        ]
-        for key, desc in shortcuts:
-            row = ctk.CTkFrame(shortcut_frame, fg_color="transparent")
-            row.pack(fill="x", padx=6, pady=1)
-            ctk.CTkLabel(row, text=key, font=("Arial", 9, "bold"), text_color="#0d6efd").pack(side="left")
-            ctk.CTkLabel(row, text=f": {desc}", font=("Arial", 9)).pack(side="left")
+        # Quick Actions with Tooltips (Shortcut references)
+        btn_home = ctk.CTkButton(cmd_frame, text="🏠 Home", width=70, height=30, command=self._press_home)
+        btn_home.grid(row=0, column=0, padx=2, pady=2)
+        ToolTip(btn_home, "Go to Home Screen\nShortcut: Alt + h")
 
-        # Interactive controls (using adb input keyevent or scrcpy triggers)
-        btn_grid = ctk.CTkFrame(container, fg_color="transparent")
-        btn_grid.pack(fill="x", pady=(6, 0))
-        
-        btn_home = ctk.CTkButton(btn_grid, text="Home", width=65, height=28, command=self._press_home)
-        btn_home.pack(side="left", padx=2)
-        
-        btn_back = ctk.CTkButton(btn_grid, text="Back", width=65, height=28, command=self._press_back)
-        btn_back.pack(side="left", padx=2)
+        btn_back = ctk.CTkButton(cmd_frame, text="🔙 Back", width=70, height=30, command=self._press_back)
+        btn_back.grid(row=0, column=1, padx=2, pady=2)
+        ToolTip(btn_back, "Go Back\nShortcut: Alt + b")
 
-        btn_power = ctk.CTkButton(btn_grid, text="Power", width=65, height=28, fg_color="#dc3545", hover_color="#bb2d3b", command=self._press_power)
-        btn_power.pack(side="left", padx=2)
+        btn_power = ctk.CTkButton(cmd_frame, text="🔌 Power", width=70, height=30, command=self._press_power)
+        btn_power.grid(row=0, column=2, padx=2, pady=2)
+        ToolTip(btn_power, "Toggle Phone Screen Power State\nShortcut: Alt + p")
+
+        btn_fs = ctk.CTkButton(cmd_frame, text="🖥 Fullscreen", width=70, height=30, command=self._dummy_shortcut)
+        btn_fs.grid(row=1, column=0, padx=2, pady=2)
+        ToolTip(btn_fs, "Toggle Fullscreen Window\nShortcut: Alt + f")
+
+        btn_rot = ctk.CTkButton(cmd_frame, text="🔄 Rotate", width=70, height=30, command=self._dummy_shortcut)
+        btn_rot.grid(row=1, column=1, padx=2, pady=2)
+        ToolTip(btn_rot, "Rotate Device Display\nShortcut: Alt + r")
+
+        btn_resize = ctk.CTkButton(cmd_frame, text="📏 Resize", width=70, height=30, command=self._dummy_shortcut)
+        btn_resize.grid(row=1, column=2, padx=2, pady=2)
+        ToolTip(btn_resize, "Resize Window (1:1 Aspect)\nShortcut: Alt + g")
+
+        # Screenshot Action
+        screenshot_frame = ctk.CTkFrame(container, fg_color="transparent")
+        screenshot_frame.pack(fill="x", pady=6)
+        
+        btn_screenshot = ctk.CTkButton(
+            screenshot_frame, 
+            text="📸 Take Screenshot", 
+            fg_color="#198754", 
+            hover_color="#157347",
+            height=32,
+            command=self._take_screenshot
+        )
+        btn_screenshot.pack(fill="x")
+        ToolTip(btn_screenshot, "Capture screen and save to cache directory\nShortcut: Alt + s")
 
         # Stop this Mirror stream only
         btn_stop_mirror = ctk.CTkButton(
@@ -969,13 +1017,14 @@ class MirrorControlCenter(ctk.CTkToplevel):
             height=32,
             command=self._stop_mirror
         )
-        btn_stop_mirror.pack(fill="x", pady=(10, 0))
+        btn_stop_mirror.pack(fill="x", side="bottom", pady=(10, 0))
 
     def _on_volume_change(self, val):
-        volume_pct = int(val)
-        # scrcpy supports real time volume via Alt+Up/Down in window.
-        # Inform user
         pass
+
+    def _dummy_shortcut(self):
+        # Notify the user that these are native scrcpy keyboard shortcuts
+        self.parent.append_log("Use the scrcpy screen window and press the shortcut keys listed in tooltip.")
 
     def _execute_adb_key(self, code):
         def worker():
@@ -1001,6 +1050,51 @@ class MirrorControlCenter(ctk.CTkToplevel):
 
     def _press_power(self):
         self._execute_adb_key(26)
+
+    def _take_screenshot(self):
+        def worker():
+            try:
+                import subprocess
+                import time
+                from config.config import Config
+                adb_path = Config.get_bin_path("adb")
+                serial = self.parent.var_target_dev.get().split("(")[-1].strip(")")
+                
+                # Buat folder cache/screenshots jika belum ada
+                ss_dir = os.path.join(Config.CACHE_DIR, "screenshots")
+                os.makedirs(ss_dir, exist_ok=True)
+                
+                filename = f"screenshot_{int(time.time())}.png"
+                local_path = os.path.join(ss_dir, filename)
+                remote_path = f"/sdcard/{filename}"
+                
+                # Jalankan perintah screencap di HP
+                cmd_cap = [adb_path]
+                if serial:
+                    cmd_cap.extend(["-s", serial])
+                cmd_cap.extend(["shell", "screencap", "-p", remote_path])
+                subprocess.run(cmd_cap, creationflags=subprocess.CREATE_NO_WINDOW if os.name == 'nt' else 0, timeout=8)
+                
+                # Tarik file ke laptop
+                cmd_pull = [adb_path]
+                if serial:
+                    cmd_pull.extend(["-s", serial])
+                cmd_pull.extend(["pull", remote_path, local_path])
+                subprocess.run(cmd_pull, creationflags=subprocess.CREATE_NO_WINDOW if os.name == 'nt' else 0, timeout=8)
+
+                # Hapus file sementara di HP
+                cmd_rm = [adb_path]
+                if serial:
+                    cmd_rm.extend(["-s", serial])
+                cmd_rm.extend(["shell", "rm", remote_path])
+                subprocess.run(cmd_rm, creationflags=subprocess.CREATE_NO_WINDOW if os.name == 'nt' else 0, timeout=5)
+
+                self.parent.after(0, lambda: self.parent.append_log(f"Screenshot saved to: {local_path}"))
+            except Exception as e:
+                self.parent.after(0, lambda: self.parent.append_log(f"Failed to take screenshot: {e}"))
+        
+        self.parent.append_log("Capturing screenshot...")
+        threading.Thread(target=worker, daemon=True).start()
 
     def _stop_mirror(self):
         self.scrcpy_manager.stop("mirror")
