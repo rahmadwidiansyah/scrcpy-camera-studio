@@ -1006,14 +1006,13 @@ class MirrorControlCenter(ctk.CTkToplevel):
                 except Exception:
                     pass
             else:
-                # Linux (X11) implementation using xdotool and xwininfo
+                # Linux (X11 / XWayland fallback)
                 try:
-                    # Cari window ID scrcpy_mirror
+                    # Coba pakai xdotool & xwininfo dulu
                     out_id = subprocess.check_output(["xdotool", "search", "--name", "scrcpy_mirror"], text=True, stderr=subprocess.DEVNULL)
                     win_ids = [line.strip() for line in out_id.splitlines() if line.strip()]
                     if win_ids:
                         target_id = win_ids[0]
-                        # Ambil koordinat jendela
                         out_info = subprocess.check_output(["xwininfo", "-id", target_id], text=True, stderr=subprocess.DEVNULL)
                         m_x = re.search(r"Absolute upper-left X:\s+(-?\d+)", out_info)
                         m_y = re.search(r"Absolute upper-left Y:\s+(-?\d+)", out_info)
@@ -1023,7 +1022,19 @@ class MirrorControlCenter(ctk.CTkToplevel):
                             scrcpy_y = int(m_y.group(1))
                             scrcpy_w = int(m_w.group(1))
                 except Exception:
-                    pass
+                    # Fallback menggunakan wmctrl jika xdotool tidak ada
+                    try:
+                        out_wm = subprocess.check_output(["wmctrl", "-lG"], text=True, stderr=subprocess.DEVNULL)
+                        for line in out_wm.splitlines():
+                            if "scrcpy_mirror" in line:
+                                parts = line.split()
+                                if len(parts) >= 6:
+                                    scrcpy_x = int(parts[2])
+                                    scrcpy_y = int(parts[3])
+                                    scrcpy_w = int(parts[4])
+                                    break
+                    except Exception:
+                        pass
 
             if scrcpy_x is not None and scrcpy_y is not None:
                 # Target coordinate: Di sebelah kiri jendela scrcpy (scrcpy_x - lebar_controller - offset)
