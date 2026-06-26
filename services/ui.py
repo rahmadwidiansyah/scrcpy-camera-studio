@@ -12,8 +12,14 @@ class CameraStudioUI(ctk.CTk):
 
     def __init__(self):
         super().__init__()
-
         from config.version import current_version
+        from config.config import Config
+        import os
+        
+        font_path = os.path.join(Config.APP_DIR, "icon", "lineicons-5.1-free", "free-solid-fonts", "lineicons-free-solid.ttf")
+        if os.path.exists(font_path):
+            ctk.FontManager.load_font(font_path)
+
         self.current_version = current_version
         self.title(f"Camera Studio v{current_version}")
         self.geometry("760x760")
@@ -44,16 +50,32 @@ class CameraStudioUI(ctk.CTk):
             ctk.set_appearance_mode(theme_name)
 
     def load_settings_to_ui(self, settings_data):
+        self.current_settings = settings_data
         cam_id = settings_data.get("last_camera", "")
         self.opt_cam.set(f"Camera {cam_id}" if cam_id else "Auto")
         self.opt_res.set(str(settings_data.get("resolution", "1080")))
         self.opt_fps.set(str(settings_data.get("fps", 30)))
         self.opt_bit.set(str(settings_data.get("bitrate", "8M")))
-        self.opt_rot.set(self._rotate_to_label(settings_data.get("rotate", 0)))
+        
+        if hasattr(self, 'var_ar'):
+            self.var_ar.set(str(settings_data.get("aspect_ratio", "Auto")))
+            
+        icon_up = chr(57366)
+        icon_right = chr(57364)
+        icon_down = chr(57361)
+        icon_left = chr(57362)
+        rot_val = settings_data.get("rotate", 0)
+        rev_map = {0: icon_up, 90: icon_right, 180: icon_down, 270: icon_left, "0": icon_up, "90": icon_right, "180": icon_down, "270": icon_left}
+        if hasattr(self, 'var_rot'):
+            self.var_rot.set(rev_map.get(rot_val, icon_up))
+
         self.opt_preview.set(str(settings_data.get("preview_mode", "Normal Window")))
         self.opt_audio_source.set(str(settings_data.get("audio_source", "Playback")))
 
-        self.chk_mirror.select() if settings_data.get("mirror", False) else self.chk_mirror.deselect()
+        if hasattr(self, 'var_mirror'):
+            self.var_mirror.set("Mirrored" if settings_data.get("mirror", False) else "Normal")
+        if hasattr(self, 'var_screenshot_path'):
+            self.var_screenshot_path.set(settings_data.get("screenshot_path", ""))
 
     def append_log(self, message):
         if threading.get_ident() != self._ui_thread_id:
@@ -73,40 +95,56 @@ class CameraStudioUI(ctk.CTk):
         self.txt_log.configure(state="disabled")
 
     def _setup_ui(self):
-        self.configure(fg_color=("#f4f6f8", "#111318"))
+        self.configure(fg_color=("#F5F7FA", "#0B0F19"))
 
         self.main_frame = ctk.CTkFrame(self, fg_color="transparent")
-        self.main_frame.pack(fill="both", expand=True, padx=16, pady=16)
+        self.main_frame.pack(fill="both", expand=True, padx=20, pady=20)
         self.main_frame.grid_columnconfigure(0, weight=1)
-        self.main_frame.grid_rowconfigure(4, weight=1)
+        self.main_frame.grid_rowconfigure(2, weight=1)
 
         self._build_header()
-        self._build_dependencies()
-        self._build_devices()
-        self._build_controls()
-        self._build_log()
+        
+        self.top_split = ctk.CTkFrame(self.main_frame, fg_color="transparent")
+        self.top_split.grid(row=1, column=0, sticky="ew", pady=(0, 15))
+        self.top_split.grid_columnconfigure(0, weight=3)
+        self.top_split.grid_columnconfigure(1, weight=2)
+        
+        self._build_devices(self.top_split, col=0)
+        self._build_dependencies(self.top_split, col=1)
+
+        self.tabview = ctk.CTkTabview(self.main_frame, corner_radius=12)
+        self.tabview.grid(row=2, column=0, sticky="nsew")
+        self.tabview.add("Camera Settings")
+        self.tabview.add("Console & Logs")
+
+        self.tabview.tab("Camera Settings").grid_columnconfigure(0, weight=1)
+        self.tabview.tab("Console & Logs").grid_columnconfigure(0, weight=1)
+        self.tabview.tab("Console & Logs").grid_rowconfigure(0, weight=1)
+
+        self._build_controls(self.tabview.tab("Camera Settings"))
+        self._build_log(self.tabview.tab("Console & Logs"))
 
     def _build_header(self):
-        header = ctk.CTkFrame(self.main_frame, corner_radius=8)
-        header.grid(row=0, column=0, sticky="ew", pady=(0, 10))
+        header = ctk.CTkFrame(self.main_frame, corner_radius=12, fg_color=("#FFFFFF", "#161B22"))
+        header.grid(row=0, column=0, sticky="ew", pady=(0, 15))
         header.grid_columnconfigure(0, weight=1)
 
         title_box = ctk.CTkFrame(header, fg_color="transparent")
-        title_box.grid(row=0, column=0, sticky="w", padx=14, pady=12)
+        title_box.grid(row=0, column=0, sticky="w", padx=20, pady=16)
 
         title_row = ctk.CTkFrame(title_box, fg_color="transparent")
         title_row.pack(anchor="w")
 
-        ctk.CTkLabel(title_row, text="Camera Studio", font=("Arial", 20, "bold")).pack(side="left")
+        ctk.CTkLabel(title_row, text="Camera Studio", font=("Inter", 22, "bold")).pack(side="left")
         
         self.badge_update = ctk.CTkLabel(
             title_row,
             text="🔴 Update",
-            font=("Arial", 10, "bold"),
+            font=("Inter", 11, "bold"),
             text_color="#ffffff",
-            fg_color="#dc3545",
-            corner_radius=8,
-            height=18,
+            fg_color="#E74C3C",
+            corner_radius=10,
+            height=20,
             cursor="hand2"
         )
         # Badge click event binding is handled externally by UpdatePresenter
@@ -114,200 +152,278 @@ class CameraStudioUI(ctk.CTk):
         self.lbl_cam_status = ctk.CTkLabel(
             title_box,
             text="Stopped",
-            text_color="#dc3545",
-            font=("Arial", 13, "bold")
+            text_color="#E74C3C",
+            font=("Inter", 13, "bold")
         )
-        self.lbl_cam_status.pack(anchor="w", pady=(2, 0))
+        self.lbl_cam_status.pack(anchor="w", pady=(4, 0))
 
         button_box = ctk.CTkFrame(header, fg_color="transparent")
-        button_box.grid(row=0, column=1, sticky="e", padx=14, pady=12)
+        button_box.grid(row=0, column=1, sticky="e", padx=20, pady=16)
 
         self.btn_start = ctk.CTkButton(
             button_box,
             text="Start Camera",
+            font=("Inter", 13, "bold"),
             width=120,
-            height=38,
-            fg_color="#198754",
-            hover_color="#157347",
+            height=40,
+            corner_radius=8,
+            text_color="#FFFFFF",
+            fg_color="#2ECC71",
+            hover_color="#27AE60",
             command=self._on_start_clicked
         )
-        self.btn_start.pack(side="left", padx=(0, 6))
+        self.btn_start.pack(side="left", padx=(0, 10))
 
         self.btn_mirror = ctk.CTkButton(
             button_box,
             text="Screen Mirror",
+            font=("Inter", 13, "bold"),
             width=120,
-            height=38,
-            fg_color="#0d6efd",
-            hover_color="#0b5ed7",
+            height=40,
+            corner_radius=8,
+            text_color="#FFFFFF",
+            fg_color="#3498DB",
+            hover_color="#2980B9",
             command=self._on_mirror_clicked
         )
-        self.btn_mirror.pack(side="left", padx=(0, 6))
+        self.btn_mirror.pack(side="left", padx=(0, 10))
 
         self.btn_stop = ctk.CTkButton(
             button_box,
             text="Stop",
+            font=("Inter", 13, "bold"),
             width=80,
-            height=38,
-            fg_color="#dc3545",
-            hover_color="#bb2d3b",
+            height=40,
+            corner_radius=8,
+            text_color="#FFFFFF",
+            fg_color="#E74C3C",
+            hover_color="#C0392B",
             state="disabled",
             command=self._on_stop_clicked
         )
         self.btn_stop.pack(side="left")
 
-    def _build_dependencies(self):
-        frame = self._section("System Check", 1)
-        for index, dep_name in enumerate(("adb", "scrcpy", "SDL2", "ffmpeg")):
-            label = ctk.CTkLabel(frame, text=f"{dep_name.upper()}: Checking", anchor="w")
-            label.grid(row=1, column=index, sticky="ew", padx=8, pady=(0, 10))
-            frame.grid_columnconfigure(index, weight=1)
-            self.status_labels[dep_name] = label
+    def _build_dependencies(self, parent, col):
+        self.deps_frame = ctk.CTkFrame(parent, corner_radius=12, fg_color=("#FFFFFF", "#161B22"))
+        self.deps_frame.grid(row=0, column=col, sticky="nsew", padx=(10, 0))
+        self.deps_frame.grid_columnconfigure((0,1), weight=1)
+        
+        ctk.CTkLabel(self.deps_frame, text="System Checks", font=("Inter", 14, "bold"), anchor="w").grid(
+            row=0, column=0, columnspan=2, sticky="w", padx=16, pady=(12, 8)
+        )
+        
+        self.deps_grid = ctk.CTkFrame(self.deps_frame, fg_color="transparent")
+        self.deps_grid.grid(row=1, column=0, columnspan=2, sticky="ew", padx=16, pady=(0, 10))
+        for i in range(2):
+            self.deps_grid.grid_columnconfigure(i, weight=1)
 
+        deps = ("adb", "scrcpy", "SDL2", "ffmpeg")
+        for index, dep_name in enumerate(deps):
+            r = index // 2
+            c = index % 2
+            label = ctk.CTkLabel(self.deps_grid, text=f"{dep_name.upper()}: Checking", anchor="w", font=("Inter", 12))
+            label.grid(row=r, column=c, sticky="ew", padx=(0, 8), pady=4)
+            self.status_labels[dep_name] = label
+            
         self.btn_install = ctk.CTkButton(
-            frame,
+            self.deps_frame,
             text="Install Missing Dependencies",
-            fg_color="#0d6efd",
-            hover_color="#0b5ed7",
+            font=("Inter", 12, "bold"),
+            text_color="#FFFFFF",
+            fg_color="#E67E22",
+            hover_color="#D35400",
+            corner_radius=8,
+            height=32,
             command=self._on_install_clicked
         )
 
-    def _build_devices(self):
-        frame = self._section("Device", 2)
+    def _build_devices(self, parent, col):
+        self.var_target_dev = ctk.StringVar()
+        frame = ctk.CTkFrame(parent, corner_radius=12, fg_color=("#FFFFFF", "#161B22"))
+        frame.grid(row=0, column=col, sticky="nsew", padx=(0, 10))
         frame.grid_columnconfigure(0, weight=1)
 
+        ctk.CTkLabel(frame, text="Connected Devices", font=("Inter", 14, "bold"), anchor="w").grid(
+            row=0, column=0, sticky="w", padx=16, pady=(12, 4)
+        )
+
         self.list_container = ctk.CTkFrame(frame, fg_color="transparent")
-        self.list_container.grid(row=1, column=0, sticky="ew", padx=8, pady=(0, 8))
+        self.list_container.grid(row=1, column=0, sticky="ew", padx=16, pady=(0, 4))
         self.list_container.grid_columnconfigure(0, weight=1)
 
         self.lbl_no_device = ctk.CTkLabel(
             self.list_container,
-            text="No device detected",
+            text="No device detected. Connect via USB or Wi-Fi.",
             anchor="w",
-            text_color=("#59636e", "#b8c0cc")
+            font=("Inter", 12),
+            text_color=("#7F8C8D", "#95A5A6")
         )
         self.lbl_no_device.grid(row=0, column=0, sticky="ew", pady=4)
 
-        self.target_dev_frame = ctk.CTkFrame(frame, fg_color="transparent")
-        self.target_dev_frame.grid_columnconfigure(1, weight=1)
-
-        ctk.CTkLabel(self.target_dev_frame, text="Target", width=80, anchor="w").grid(
-            row=0, column=0, padx=(8, 10), pady=(0, 10), sticky="w"
-        )
-        self.var_target_dev = ctk.StringVar()
-        self.opt_target_dev = ctk.CTkOptionMenu(
-            self.target_dev_frame,
-            variable=self.var_target_dev,
-            command=self._on_target_dev_change
-        )
-        self.opt_target_dev.grid(row=0, column=1, sticky="ew", padx=(0, 8), pady=(0, 10))
-
-    def _build_controls(self):
-        frame = self._section("Camera Settings", 3)
+    def _build_controls(self, parent):
+        frame = ctk.CTkFrame(parent, fg_color="transparent")
+        frame.grid(row=0, column=0, sticky="nsew", padx=16, pady=16)
         for column in range(4):
             frame.grid_columnconfigure(column, weight=1)
 
+        def _stylish_field(p, label_text, widget, row, column, columnspan=1):
+            ctk.CTkLabel(p, text=label_text, anchor="w", font=("Inter", 12, "bold"), text_color=("#34495E", "#BDC3C7")).grid(
+                row=row, column=column, columnspan=columnspan, sticky="w", padx=8, pady=(0, 4)
+            )
+            widget.configure(
+                font=("Inter", 12), 
+                dropdown_font=("Inter", 12),
+                fg_color=("#FFFFFF", "#21262D"),
+                button_color=("#EDEEF0", "#30363D"),
+                button_hover_color=("#DFE1E5", "#484F58"),
+                text_color=("#2C3E50", "#ECF0F1"),
+                corner_radius=8,
+                height=32
+            )
+            widget.grid(row=row + 1, column=column, columnspan=columnspan, sticky="ew", padx=8, pady=(0, 12))
+
+        def _stylish_segmented(p, label_text, widget, row, column, columnspan=1):
+            ctk.CTkLabel(p, text=label_text, anchor="w", font=("Inter", 12, "bold"), text_color=("#34495E", "#BDC3C7")).grid(
+                row=row, column=column, columnspan=columnspan, sticky="w", padx=8, pady=(0, 4)
+            )
+            widget.configure(
+                selected_color="#3498DB",
+                selected_hover_color="#2980B9",
+                unselected_color=("#EDEEF0", "#30363D"),
+                unselected_hover_color=("#DFE1E5", "#484F58"),
+                text_color=("#2C3E50", "#ECF0F1"),
+                corner_radius=8,
+                height=32
+            )
+            widget.grid(row=row + 1, column=column, columnspan=columnspan, sticky="ew", padx=8, pady=(0, 12))
+
         self.var_cam = ctk.StringVar()
         self.opt_cam = ctk.CTkOptionMenu(
-            frame,
-            values=["Auto"],
-            variable=self.var_cam,
-            command=self._on_camera_change
+            frame, values=["Auto"], variable=self.var_cam, command=self._on_camera_change
         )
-        self._field(frame, "Camera", self.opt_cam, 1, 0)
+        _stylish_field(frame, "Camera", self.opt_cam, 1, 0)
 
         self.opt_res = ctk.CTkOptionMenu(
-            frame,
-            values=["720", "1080", "1920", "Auto"],
-            command=lambda value: self._on_setting_change("resolution", value)
+            frame, values=["720", "1080", "1920", "Auto"], command=lambda value: self._on_setting_change("resolution", value)
         )
-        self._field(frame, "Resolution", self.opt_res, 1, 1)
+        _stylish_field(frame, "Resolution", self.opt_res, 1, 1)
 
         self.opt_fps = ctk.CTkOptionMenu(
-            frame,
-            values=["15", "24", "30"],
-            command=lambda value: self._on_setting_change("fps", int(value))
+            frame, values=["15", "24", "30"], command=lambda value: self._on_setting_change("fps", int(value))
         )
-        self._field(frame, "FPS", self.opt_fps, 1, 2)
+        _stylish_field(frame, "FPS", self.opt_fps, 1, 2)
 
         self.opt_bit = ctk.CTkOptionMenu(
-            frame,
-            values=["4M", "8M", "16M", "24M"],
-            command=lambda value: self._on_setting_change("bitrate", value)
+            frame, values=["4M", "8M", "16M", "24M"], command=lambda value: self._on_setting_change("bitrate", value)
         )
-        self._field(frame, "Bitrate", self.opt_bit, 1, 3)
+        _stylish_field(frame, "Bitrate", self.opt_bit, 1, 3)
 
-        self.opt_rot = ctk.CTkOptionMenu(
-            frame,
-            values=["0 deg", "90 deg", "180 deg", "270 deg"],
-            command=lambda value: self._on_setting_change("rotate", self._rotate_from_label(value))
+        self.var_ar = ctk.StringVar(value="Auto")
+        self.seg_ar = ctk.CTkSegmentedButton(
+            frame, values=["16:9", "4:3", "Auto"], variable=self.var_ar, command=lambda value: self._on_setting_change("aspect_ratio", value)
         )
-        self._field(frame, "Rotate", self.opt_rot, 3, 0)
+        self.seg_ar.configure(font=("Inter", 13, "bold"))
+        _stylish_segmented(frame, "Ratio", self.seg_ar, 3, 0, columnspan=2)
+
+        icon_up = chr(57366)
+        icon_right = chr(57364)
+        icon_down = chr(57361)
+        icon_left = chr(57362)
+
+        self.var_rot = ctk.StringVar(value=icon_up)
+        def rot_cb(val):
+            mapping = {icon_up: 0, icon_right: 90, icon_down: 180, icon_left: 270}
+            self._on_setting_change("rotate", mapping.get(val, 0))
+        self.seg_rot = ctk.CTkSegmentedButton(
+            frame, values=[icon_up, icon_right, icon_down, icon_left], variable=self.var_rot, command=rot_cb
+        )
+        self.seg_rot.configure(font=("lineicons-free-solid", 18))
+        _stylish_segmented(frame, "Rotate", self.seg_rot, 3, 2, columnspan=2)
 
         self.opt_preview = ctk.CTkOptionMenu(
-            frame,
-            values=["Normal Window", "Borderless", "Always On Top", "Hidden Preview"],
-            command=lambda value: self._on_setting_change("preview_mode", value)
+            frame, values=["Normal Window", "Borderless", "Always On Top", "Hidden Preview"], command=lambda value: self._on_setting_change("preview_mode", value)
         )
-        self._field(frame, "Preview", self.opt_preview, 3, 1, columnspan=2)
+        _stylish_field(frame, "Preview", self.opt_preview, 5, 0, columnspan=2)
 
         self.opt_audio_source = ctk.CTkOptionMenu(
-            frame,
-            values=["Playback", "Mic", "Both", "Off"],
-            command=lambda value: self._on_setting_change("audio_source", value)
+            frame, values=["Playback", "Mic", "Both", "Off"], command=lambda value: self._on_setting_change("audio_source", value)
         )
-        self._field(frame, "Audio Source", self.opt_audio_source, 3, 3)
+        _stylish_field(frame, "Audio Source", self.opt_audio_source, 5, 2, columnspan=2)
 
-        switch_box = ctk.CTkFrame(frame, fg_color="transparent")
-        switch_box.grid(row=5, column=0, columnspan=4, sticky="ew", padx=8, pady=(0, 12))
-
-        self.chk_mirror = ctk.CTkCheckBox(
-            switch_box,
-            text="Mirror/Flip Camera",
-            command=lambda: self._on_setting_change("mirror", bool(self.chk_mirror.get()))
+        self.var_mirror = ctk.StringVar(value="Normal")
+        def mirror_cb(val):
+            self._on_setting_change("mirror", val == "Mirrored")
+            
+        self.seg_mirror = ctk.CTkSegmentedButton(
+            frame, values=["Normal", "Mirrored"], variable=self.var_mirror, command=mirror_cb
         )
-        self.chk_mirror.pack(side="left")
+        self.seg_mirror.configure(font=("Inter", 13, "bold"))
+        _stylish_segmented(frame, "Mirror", self.seg_mirror, 7, 0, columnspan=2)
 
-    def _build_log(self):
-        frame = self._section("Log", 4)
-        frame.grid_columnconfigure(0, weight=1)
-        frame.grid_rowconfigure(1, weight=1)
+        path_box = ctk.CTkFrame(frame, fg_color="transparent")
+        path_box.grid(row=8, column=0, columnspan=4, sticky="ew", padx=8, pady=(0, 12))
+        
+        ctk.CTkLabel(path_box, text="Screenshot Path:", font=("Inter", 12, "bold"), text_color=("#34495E", "#BDC3C7")).pack(side="left", padx=(8, 10))
+        self.var_screenshot_path = ctk.StringVar()
+        
+        path_input_container = ctk.CTkFrame(path_box, fg_color="transparent")
+        path_input_container.pack(side="left", fill="x", expand=True, padx=(0, 8))
+        
+        self.ent_screenshot_path = ctk.CTkEntry(
+            path_input_container, 
+            textvariable=self.var_screenshot_path,
+            font=("Inter", 12),
+            fg_color=("#FFFFFF", "#21262D"),
+            text_color=("#2C3E50", "#ECF0F1"),
+            corner_radius=8,
+            height=32,
+            border_width=1
+        )
+        self.ent_screenshot_path.pack(side="left", fill="x", expand=True)
+        
+        self.btn_browse_path = ctk.CTkButton(
+            path_input_container,
+            text="...",
+            width=40,
+            height=32,
+            font=("Inter", 12, "bold"),
+            fg_color=("#EDEEF0", "#30363D"),
+            text_color=("#2C3E50", "#ECF0F1"),
+            hover_color=("#DFE1E5", "#484F58"),
+            corner_radius=8,
+            command=self._on_browse_screenshot
+        )
+        self.btn_browse_path.pack(side="left", padx=(8, 0))
 
+    def _on_browse_screenshot(self):
+        from tkinter import filedialog
+        path = filedialog.askdirectory(title="Select Screenshot Directory")
+        if path:
+            self.var_screenshot_path.set(path)
+            self._on_setting_change("screenshot_path", path)
+
+    def _build_log(self, parent):
         self.txt_log = ctk.CTkTextbox(
-            frame,
-            state="disabled",
-            wrap="word",
-            height=180,
-            fg_color="#111318",
-            text_color="#f2f2f2"
+            parent, state="disabled", wrap="word",
+            fg_color=("#FFFFFF", "#0B0F19"),
+            text_color=("#2C3E50", "#ECF0F1"),
+            font=("Consolas", 12),
+            corner_radius=8,
+            border_width=1,
+            border_color=("#E5E8E8", "#21262D")
         )
-        self.txt_log.grid(row=1, column=0, sticky="nsew", padx=8, pady=(0, 10))
+        self.txt_log.grid(row=0, column=0, sticky="nsew", padx=16, pady=16)
         try:
-            self.txt_log.tag_config("normal", foreground="#f2f2f2")
-            self.txt_log.tag_config("error", foreground="#ff5f6d")
+            self.txt_log.tag_config("normal", foreground="#ECF0F1" if ctk.get_appearance_mode()=="Dark" else "#2C3E50")
+            self.txt_log.tag_config("error", foreground="#E74C3C")
         except Exception:
             pass
 
     def _section(self, title, row):
-        frame = ctk.CTkFrame(self.main_frame, corner_radius=8)
-        frame.grid(row=row, column=0, sticky="ew" if row != 4 else "nsew", pady=(0, 10))
-        ctk.CTkLabel(frame, text=title, font=("Arial", 14, "bold"), anchor="w").grid(
-            row=0, column=0, sticky="w", padx=12, pady=(10, 8)
-        )
-        return frame
+        pass
 
     def _field(self, parent, label_text, widget, row, column, columnspan=1):
-        ctk.CTkLabel(parent, text=label_text, anchor="w").grid(
-            row=row, column=column, columnspan=columnspan, sticky="w", padx=8, pady=(0, 4)
-        )
-        widget.grid(
-            row=row + 1,
-            column=column,
-            columnspan=columnspan,
-            sticky="ew",
-            padx=8,
-            pady=(0, 12)
-        )
+        pass
 
     def _on_setting_change(self, key, value):
         if self.setting_change_callback:
@@ -315,6 +431,11 @@ class CameraStudioUI(ctk.CTk):
 
     def _on_target_dev_change(self, selected_value):
         serial = selected_value.split("(")[-1].strip(")")
+        self._on_setting_change("target_device", serial)
+        self.append_log(f"Target device changed to: {serial}")
+
+    def _on_radio_target_change(self):
+        serial = self.var_target_dev.get()
         self._on_setting_change("target_device", serial)
         self.append_log(f"Target device changed to: {serial}")
 
@@ -368,7 +489,6 @@ class CameraStudioUI(ctk.CTk):
 
         if not devices:
             self.lbl_no_device.grid(row=0, column=0, sticky="ew", pady=4)
-            self.target_dev_frame.grid_forget()
             self._on_setting_change("target_device", "")
             return
 
@@ -387,36 +507,45 @@ class CameraStudioUI(ctk.CTk):
 
             if status == "device":
                 status_text = "Ready"
-                status_color = "#28a745"
+                status_color = "#2ECC71"
                 ready_devices.append(dev)
             elif status == "unauthorized":
                 status_text = "Unauthorized"
-                status_color = "#dc3545"
+                status_color = "#E74C3C"
             else:
                 status_text = status.capitalize()
-                status_color = "#ffc107"
+                status_color = "#F1C40F"
 
             ctk.CTkLabel(row_frame, text=f"{model_name}  ({serial_num})", anchor="w").grid(
                 row=0, column=0, sticky="ew"
             )
-            ctk.CTkLabel(row_frame, text=status_text, text_color=status_color, width=110, anchor="e").grid(
-                row=0, column=1, sticky="e"
-            )
 
-        if len(ready_devices) > 1:
-            self.target_dev_frame.grid(row=2, column=0, sticky="ew")
-            options = [
-                f"{getattr(device, 'model_name', 'Unknown')} ({getattr(device, 'serial', 'Unknown')})"
-                for device in ready_devices
-            ]
-            self.opt_target_dev.configure(values=options)
-            if self.var_target_dev.get() not in options:
-                self.opt_target_dev.set(options[0])
-                self._on_target_dev_change(options[0])
+            if status == "device":
+                rb = ctk.CTkRadioButton(
+                    row_frame,
+                    text="Use",
+                    variable=self.var_target_dev,
+                    value=serial_num,
+                    command=self._on_radio_target_change,
+                    font=("Inter", 12, "bold"),
+                    fg_color="#3498DB",
+                    hover_color="#2980B9",
+                    text_color="#3498DB"
+                )
+                rb.grid(row=0, column=1, sticky="e", padx=(10, 0))
+            else:
+                ctk.CTkLabel(row_frame, text=status_text, text_color=status_color, width=80, anchor="e").grid(
+                    row=0, column=1, sticky="e"
+                )
+
+        if ready_devices:
+            current_serial = self.var_target_dev.get()
+            if not any(getattr(d, "serial", "") == current_serial for d in ready_devices):
+                first_serial = getattr(ready_devices[0], "serial", "")
+                self.var_target_dev.set(first_serial)
+                self._on_setting_change("target_device", first_serial)
         else:
-            self.target_dev_frame.grid_forget()
-            target_serial = getattr(ready_devices[0], "serial", "") if ready_devices else ""
-            self._on_setting_change("target_device", target_serial)
+            self._on_setting_change("target_device", "")
 
     def set_camera_state(self, is_running):
         # Backward compatibility helper
@@ -430,13 +559,13 @@ class CameraStudioUI(ctk.CTk):
 
         # Update status labels / buttons
         if cam_running and mir_running:
-            self.lbl_cam_status.configure(text="Camera & Mirror Running", text_color="#28a745")
+            self.lbl_cam_status.configure(text="Camera & Mirror Running", text_color="#2ECC71")
         elif cam_running:
-            self.lbl_cam_status.configure(text="Camera Running", text_color="#28a745")
+            self.lbl_cam_status.configure(text="Camera Running", text_color="#2ECC71")
         elif mir_running:
-            self.lbl_cam_status.configure(text="Mirror Running", text_color="#28a745")
+            self.lbl_cam_status.configure(text="Mirror Running", text_color="#2ECC71")
         else:
-            self.lbl_cam_status.configure(text="Stopped", text_color="#dc3545")
+            self.lbl_cam_status.configure(text="Stopped", text_color="#E74C3C")
 
         self.btn_start.configure(state="disabled" if cam_running else "normal")
         self.btn_mirror.configure(state="disabled" if mir_running else "normal")
@@ -490,7 +619,7 @@ class CameraStudioUI(ctk.CTk):
 
     def show_installer_flow(self, is_missing):
         if is_missing:
-            self.btn_install.grid(row=2, column=0, columnspan=4, sticky="ew", padx=8, pady=(0, 10))
+            self.btn_install.grid(row=2, column=0, columnspan=2, sticky="ew", padx=16, pady=(0, 10))
             self.btn_start.configure(state="disabled")
             self.btn_mirror.configure(state="disabled")
             self.append_log("Action required: Missing dependencies detected.")
@@ -506,12 +635,12 @@ class CameraStudioUI(ctk.CTk):
             return
 
         if is_found:
-            label.configure(text=f"{dep_name.upper()}: Found", text_color="#28a745")
+            label.configure(text=f"{dep_name.upper()}: Found", text_color="#2ECC71")
             self.append_log(f"Dependency check: {dep_name.upper()} is ready.")
             return
 
         text = f"{dep_name.upper()}: Missing"
-        color = "#ffc107" if is_optional else "#dc3545"
+        color = "#F1C40F" if is_optional else "#E74C3C"
         if is_optional:
             text += " (Optional)"
             self.append_log(f"Dependency check: {dep_name.upper()} is missing (optional).")
@@ -615,7 +744,7 @@ class CameraStudioUI(ctk.CTk):
                 text="Cancel",
                 width=100,
                 fg_color="transparent",
-                hover_color=("#dc3545", "#dc3545"),
+                hover_color=("#E74C3C", "#E74C3C"),
                 border_width=1,
                 text_color=("#111318", "#f2f2f2"),
                 command=downloader.cancel
@@ -700,7 +829,7 @@ class CameraStudioUI(ctk.CTk):
                                         container, 
                                         text="scrcpy Updated Successfully!", 
                                         font=("Arial", 16, "bold"),
-                                        text_color="#28a745"
+                                        text_color="#2ECC71"
                                     )
                                     lbl_success.pack(anchor="w", pady=(0, 15))
 
@@ -733,7 +862,7 @@ class CameraStudioUI(ctk.CTk):
                                         container, 
                                         text="Extraction Failed!", 
                                         font=("Arial", 16, "bold"),
-                                        text_color="#dc3545"
+                                        text_color="#E74C3C"
                                     )
                                     lbl_fail.pack(anchor="w", pady=(0, 15))
 
@@ -810,7 +939,7 @@ class CameraStudioUI(ctk.CTk):
                             container, 
                             text="Download Failed!", 
                             font=("Arial", 16, "bold"),
-                            text_color="#dc3545"
+                            text_color="#E74C3C"
                         )
                         lbl_fail.pack(anchor="w", pady=(0, 15))
                         lbl_desc = ctk.CTkLabel(
@@ -1122,8 +1251,8 @@ class MirrorControlCenter(ctk.CTkToplevel):
                 width=46, 
                 height=36, 
                 font=("Arial", 14),
-                fg_color="#2b2b2b" if icon != "❌" else "#dc3545",
-                hover_color="#3e3e3e" if icon != "❌" else "#bb2d3b",
+                fg_color="#2b2b2b" if icon != "❌" else "#E74C3C",
+                hover_color="#3e3e3e" if icon != "❌" else "#C0392B",
                 command=cmd
             )
             btn.pack(pady=3, padx=2)
@@ -1205,8 +1334,14 @@ class MirrorControlCenter(ctk.CTkToplevel):
                 adb_path = Config.get_bin_path("adb")
                 serial = self.parent.var_target_dev.get().split("(")[-1].strip(")")
                 
-                # Buat folder cache/screenshots jika belum ada
-                ss_dir = os.path.join(Config.CACHE_DIR, "screenshots")
+                settings = getattr(self.parent, "current_settings", {})
+                custom_path = settings.get("screenshot_path", "")
+                
+                if custom_path:
+                    ss_dir = custom_path
+                else:
+                    ss_dir = os.path.join(os.path.expanduser("~"), "Pictures", "scrcpy_studio")
+                    
                 os.makedirs(ss_dir, exist_ok=True)
                 
                 filename = f"screenshot_{int(time.time())}.png"
@@ -1234,9 +1369,12 @@ class MirrorControlCenter(ctk.CTkToplevel):
                 cmd_rm.extend(["shell", "rm", remote_path])
                 subprocess.run(cmd_rm, creationflags=subprocess.CREATE_NO_WINDOW if os.name == 'nt' else 0, timeout=5)
 
-                self.parent.after(0, lambda: self.parent.append_log(f"Screenshot saved to: {local_path}"))
+                success_msg = f"Screenshot berhasil disimpan ke:\n{local_path}"
+                self.parent.after(0, lambda m=success_msg: self.parent.append_log(m))
             except Exception as e:
-                self.parent.after(0, lambda: self.parent.append_log(f"Failed to take screenshot: {e}"))
+                err_msg = str(e)
+                user_msg = f"❌ Gagal mengambil screenshot.\nDetail Error: {err_msg}\n\n💡 Saran perbaikan:\n1. Pastikan kabel USB / koneksi WiFi stabil.\n2. Layar HP tidak sedang terkunci.\n3. Folder penyimpanan tidak penuh/memiliki izin akses."
+                self.parent.after(0, lambda m=user_msg: self.parent.append_log(m))
         
         self.parent.append_log("Capturing screenshot...")
         threading.Thread(target=worker, daemon=True).start()

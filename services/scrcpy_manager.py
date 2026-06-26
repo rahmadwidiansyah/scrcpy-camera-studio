@@ -41,6 +41,12 @@ class ScrcpyManager:
             if res and res.lower() != "auto":
                 args.append(f"--max-size={res}")
 
+            # Konfigurasi Aspect Ratio
+            if mode == "camera":
+                ar = settings_data.get("aspect_ratio", "Auto")
+                if ar and ar.lower() != "auto":
+                    args.append(f"--camera-ar={ar}")
+
             # Konfigurasi FPS
             fps = settings_data.get("fps", 30)
             if fps:

@@ -70,7 +70,7 @@ class UpdateDialog(ctk.CTkToplevel):
             info_frame, 
             text=f"Latest Version:     v{self.latest_version}", 
             font=("Arial", 12, "bold"),
-            text_color="#28a745"
+            text_color="#2ECC71"
         )
         lbl_latest_version.pack(anchor="w", padx=16, pady=(2, 4))
 
@@ -176,7 +176,7 @@ class UpdateDialog(ctk.CTkToplevel):
             text="Cancel",
             width=100,
             fg_color="transparent",
-            hover_color=("#dc3545", "#dc3545"),
+            hover_color=("#E74C3C", "#E74C3C"),
             border_width=1,
             text_color=("#111318", "#f2f2f2"),
             command=self.callbacks.get("on_cancel")
@@ -234,7 +234,7 @@ class UpdateDialog(ctk.CTkToplevel):
             self.container, 
             text="Download Complete!", 
             font=("Arial", 20, "bold"),
-            text_color="#28a745"
+            text_color="#2ECC71"
         )
         lbl_title.pack(anchor="w", pady=(0, 15))
 
@@ -282,7 +282,7 @@ class UpdateDialog(ctk.CTkToplevel):
             self.container, 
             text="Download Failed!", 
             font=("Arial", 20, "bold"),
-            text_color="#dc3545"
+            text_color="#E74C3C"
         )
         lbl_title.pack(anchor="w", pady=(0, 15))
 

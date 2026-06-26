@@ -158,12 +158,12 @@ def main():
             # app.after(0) memastikan update UI dieksekusi di main thread secara aman
             app.after(0, lambda: app.btn_install.configure(
                 text="Install Complete! Please Restart App.", 
-                fg_color="#28a745"
+                fg_color="#2ECC71"
             ))
         else:
             app.after(0, lambda: app.btn_install.configure(
                 text="Install Failed! Check Log.", 
-                fg_color="#dc3545"
+                fg_color="#E74C3C"
             ))
 
     def on_scrcpy_start(mode="camera"):
@@ -178,10 +178,22 @@ def main():
         else:
             threading.Thread(target=lambda: scrcpy.start(settings.current_settings, mode="camera"), daemon=True).start()
 
+    def on_setting_change_intercept(key, value):
+        settings.set(key, value)
+        if key in ("rotate", "mirror", "resolution", "fps", "bitrate", "audio_source", "preview_mode", "aspect_ratio"):
+            if scrcpy.is_running("camera"):
+                logger.info(f"Pengaturan '{key}' diubah. Memuat ulang kamera secara otomatis...")
+                def restart_worker():
+                    scrcpy.stop("camera")
+                    import time
+                    time.sleep(0.5)
+                    scrcpy.start(settings.current_settings, mode="camera")
+                threading.Thread(target=restart_worker, daemon=True).start()
+
     app.set_callbacks(
         start_cb=on_scrcpy_start,
         stop_cb=scrcpy.stop,
-        setting_change_cb=settings.set,
+        setting_change_cb=on_setting_change_intercept,
         # Arahkan ke start_install sungguhan dan lemparkan callback on_install_done
         install_cb=lambda: installer.start_install(on_complete_callback=on_install_done)
     )

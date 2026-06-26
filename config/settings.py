@@ -22,7 +22,9 @@ class SettingsManager:
             "audio": False,
             "theme": "System",
             "preview_mode": "Normal Window",
-            "target_device": ""  
+            "target_device": "",
+            "screenshot_path": "",
+            "aspect_ratio": "Auto"
         }
         
         self.current_settings = self.default_settings.copy()

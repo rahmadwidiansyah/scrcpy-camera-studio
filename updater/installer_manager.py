@@ -110,7 +110,12 @@ class InstallerManager:
 
             # Langkah 1: Download
             self.logger.info("Langkah 1: Mengunduh paket resmi scrcpy (sekitar 5MB-10MB)...")
-            urllib.request.urlretrieve(self.scrcpy_win_url, zip_path)
+            req = urllib.request.Request(
+                self.scrcpy_win_url,
+                headers={"User-Agent": "Camera-Studio-Updater"}
+            )
+            with urllib.request.urlopen(req) as response, open(zip_path, 'wb') as out_file:
+                shutil.copyfileobj(response, out_file)
             self.logger.info("Unduhan selesai.")
 
             # Langkah 2: Extract
@@ -156,6 +161,42 @@ class InstallerManager:
 
         except Exception as e:
             self.logger.error(f"Gagal melakukan instalasi: {e}")
+            self.logger.info("Mencoba fallback menggunakan stock scrcpy lokal...")
+            try:
+                stock_zip = os.path.join(Config.APP_DIR, "assets", "stock", "scrcpy.zip")
+                if os.path.exists(stock_zip):
+                    extract_dir = os.path.join(cache_dir, "temp_extract")
+                    if os.path.exists(extract_dir):
+                        shutil.rmtree(extract_dir)
+                    os.makedirs(extract_dir, exist_ok=True)
+                    
+                    with zipfile.ZipFile(stock_zip, 'r') as zip_ref:
+                        zip_ref.extractall(extract_dir)
+                    
+                    scrcpy_dir = os.path.join(bin_dir, "scrcpy")
+                    if os.path.exists(scrcpy_dir):
+                        shutil.rmtree(scrcpy_dir)
+                    os.makedirs(scrcpy_dir, exist_ok=True)
+
+                    extracted_items = os.listdir(extract_dir)
+                    if len(extracted_items) == 1 and os.path.isdir(os.path.join(extract_dir, extracted_items[0])):
+                        inner_dir = os.path.join(extract_dir, extracted_items[0])
+                        for item in os.listdir(inner_dir):
+                            shutil.move(os.path.join(inner_dir, item), os.path.join(scrcpy_dir, item))
+                    else:
+                        for item in extracted_items:
+                            shutil.move(os.path.join(extract_dir, item), os.path.join(scrcpy_dir, item))
+                            
+                    shutil.rmtree(extract_dir)
+                    self.logger.info("Instalasi dari stock scrcpy SELESAI.")
+                    if on_complete_callback:
+                        on_complete_callback("Success")
+                    return
+                else:
+                    self.logger.error("Stock scrcpy tidak ditemukan.")
+            except Exception as ex:
+                self.logger.error(f"Fallback stock scrcpy gagal: {ex}")
+            
             if on_complete_callback:
                 on_complete_callback("Error")
 
