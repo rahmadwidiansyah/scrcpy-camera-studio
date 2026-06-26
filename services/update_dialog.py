@@ -9,6 +9,9 @@ class UpdateDialog(ctk.CTkToplevel):
         self.geometry("500x480")
         self.resizable(False, False)
 
+        if hasattr(parent, '_set_window_icon'):
+            parent._set_window_icon(self)
+
         self.current_version = current_version
         self.latest_version = latest_version
         self.release_notes = release_notes

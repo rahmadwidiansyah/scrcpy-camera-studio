@@ -22,9 +22,12 @@ class SettingsManager:
             "audio": False,
             "theme": "System",
             "preview_mode": "Normal Window",
-            "target_device": "",
+            "target_device": "",       # legacy — kept for compatibility
+            "camera_device": "",       # serial device yang dipakai Camera
+            "mirror_device": "",       # serial device yang dipakai Mirror
             "screenshot_path": "",
-            "aspect_ratio": "Auto"
+            "aspect_ratio": "Auto",
+            "audio_source": "Playback"
         }
         
         self.current_settings = self.default_settings.copy()

@@ -82,6 +82,16 @@ def poll_scrcpy_status(app, scrcpy_manager):
             app.update_scrcpy_status(statuses)
         except Exception:
             return
+
+    # Check for unexpected crashes
+    for mode in ["camera", "mirror"]:
+        if not statuses[mode]:
+            ret_code = scrcpy_manager._last_return_codes.get(mode)
+            if ret_code is not None and ret_code != 0 and not scrcpy_manager._manual_stop.get(mode, False) and not scrcpy_manager._error_reported.get(mode, False):
+                scrcpy_manager._error_reported[mode] = True
+                logs = scrcpy_manager.process_logs.get(mode, [])
+                if hasattr(app, 'show_scrcpy_error_dialog'):
+                    app.after(0, lambda m=mode, c=ret_code, l=logs: app.show_scrcpy_error_dialog(m, c, l))
     
     try:
         app.after(1000, lambda: poll_scrcpy_status(app, scrcpy_manager))
@@ -98,12 +108,18 @@ def check_scrcpy_updates_async(app, scrcpy_manager, installer, logger):
         scrcpy_dir = os.path.join(Config.BIN_DIR, "scrcpy")
         is_scrcpy_installed = Config.check_dependency("scrcpy")
 
+        min_required_ver = "4.0"
+        default_url = "https://github.com/Genymobile/scrcpy/releases/download/v4.0/scrcpy-win64-v4.0.zip"
+
         if not is_scrcpy_installed or not os.path.exists(scrcpy_dir):
             logger.info("scrcpy belum terpasang. Mengambil URL rilis terbaru...")
             latest_ver, download_url = scrcpy_manager.get_latest_online_version()
             if download_url:
                 installer.scrcpy_win_url = download_url
                 logger.info(f"Mengunduh scrcpy versi terbaru secara otomatis: {latest_ver}")
+            else:
+                installer.scrcpy_win_url = default_url
+                logger.info(f"Mengunduh scrcpy versi minimal secara otomatis: {min_required_ver}")
             # Jalankan instalasi otomatis di UI
             app.after(0, lambda: app._on_install_clicked())
             return
@@ -116,8 +132,25 @@ def check_scrcpy_updates_async(app, scrcpy_manager, installer, logger):
 
         logger.info(f"Versi scrcpy lokal: v{local_ver}")
 
+        # Cek apakah versi lokal di bawah versi minimal v4.0
+        is_below_min = False
+        try:
+            if parse_version(local_ver) < parse_version(min_required_ver):
+                is_below_min = True
+                logger.info(f"Versi lokal ({local_ver}) di bawah versi minimal ({min_required_ver}). Menawarkan update ke v{min_required_ver}...")
+        except Exception as e:
+            logger.error(f"Gagal memeriksa versi minimal scrcpy: {e}")
+
         # Ambil versi terbaru di GitHub API
         latest_ver, download_url = scrcpy_manager.get_latest_online_version()
+        
+        target_ver = latest_ver if latest_ver else min_required_ver
+        target_url = download_url if download_url else default_url
+
+        if is_below_min:
+            app.after(0, lambda: app.show_scrcpy_update_prompt(local_ver, target_ver, target_url, installer))
+            return
+
         if not latest_ver or not download_url:
             logger.warning("Gagal mendeteksi versi scrcpy terbaru di internet.")
             return
@@ -146,8 +179,10 @@ def main():
 
     app = CameraStudioUI()
     app.logger = logger.get_logger("startup")
+    app._adb_manager = adb   # expose so Devices page can call WiFi ADB helpers
     app.apply_theme(settings.get("theme"))
     logger.set_callback(app.append_log)
+    app._ensure_log_textbox()   # create txt_log before any log messages
     logger.info(f"Memulai aplikasi Camera Studio v{current_version} (Build {build_number}) [{release_channel}]...")
 
     app.load_settings_to_ui(settings.current_settings)
@@ -167,27 +202,40 @@ def main():
             ))
 
     def on_scrcpy_start(mode="camera"):
+        # Buat salinan settings dan inject serial yang tepat per mode
+        import copy
+        s = copy.deepcopy(settings.current_settings)
         if mode == "mirror":
+            # Mirror gunakan mirror_device; fallback ke target_device (legacy)
+            serial = s.get("mirror_device") or s.get("target_device", "")
+            s["target_device"] = serial
             from services.ui import MirrorControlCenter
             control_center = MirrorControlCenter(app, scrcpy)
             app.mirror_control_center = control_center
-            
             def start_worker():
-                scrcpy.start(settings.current_settings, mode="mirror")
+                scrcpy.start(s, mode="mirror")
             threading.Thread(target=start_worker, daemon=True).start()
         else:
-            threading.Thread(target=lambda: scrcpy.start(settings.current_settings, mode="camera"), daemon=True).start()
+            # Camera gunakan camera_device; fallback ke target_device (legacy)
+            serial = s.get("camera_device") or s.get("target_device", "")
+            s["target_device"] = serial
+            threading.Thread(target=lambda: scrcpy.start(s, mode="camera"), daemon=True).start()
 
     def on_setting_change_intercept(key, value):
         settings.set(key, value)
-        if key in ("rotate", "mirror", "resolution", "fps", "bitrate", "audio_source", "preview_mode", "aspect_ratio"):
+        if key in ("rotate", "mirror", "resolution", "fps", "bitrate",
+                   "audio_source", "preview_mode", "aspect_ratio"):
             if scrcpy.is_running("camera"):
                 logger.info(f"Pengaturan '{key}' diubah. Memuat ulang kamera secara otomatis...")
                 def restart_worker():
                     scrcpy.stop("camera")
                     import time
                     time.sleep(0.5)
-                    scrcpy.start(settings.current_settings, mode="camera")
+                    import copy
+                    s = copy.deepcopy(settings.current_settings)
+                    serial = s.get("camera_device") or s.get("target_device", "")
+                    s["target_device"] = serial
+                    scrcpy.start(s, mode="camera")
                 threading.Thread(target=restart_worker, daemon=True).start()
 
     app.set_callbacks(

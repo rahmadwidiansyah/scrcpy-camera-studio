@@ -10,8 +10,8 @@ class InstallerManager:
     def __init__(self, logger):
         self.logger = logger
         self.required_deps = ["adb", "scrcpy"]
-        # URL rilis resmi scrcpy untuk Windows 64-bit (v2.4 - Stabil)
-        self.scrcpy_win_url = "https://github.com/Genymobile/scrcpy/releases/download/v2.4/scrcpy-win64-v2.4.zip"
+        # URL rilis resmi scrcpy untuk Windows 64-bit (v4.0 - Stabil)
+        self.scrcpy_win_url = "https://github.com/Genymobile/scrcpy/releases/download/v4.0/scrcpy-win64-v4.0.zip"
 
     def get_missing_dependencies(self):
         missing = []

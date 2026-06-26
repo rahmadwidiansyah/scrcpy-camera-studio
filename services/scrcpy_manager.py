@@ -11,6 +11,9 @@ class ScrcpyManager:
         self.processes = {}  # dict mapping mode (e.g., 'camera', 'mirror') to process
         self.scrcpy_path = Config.get_bin_path("scrcpy")
         self._last_return_codes = {}
+        self.process_logs = {"camera": [], "mirror": []}
+        self._manual_stop = {"camera": False, "mirror": False}
+        self._error_reported = {"camera": False, "mirror": False}
 
     def start(self, settings_data, mode="camera", parent_window_id=None):
         if self.is_running(mode):
@@ -18,6 +21,11 @@ class ScrcpyManager:
             return
             
         try:
+            self._manual_stop[mode] = False
+            self._error_reported[mode] = False
+            self._last_return_codes[mode] = None
+            self.process_logs[mode] = []
+            
             self.logger.info(f"Menyiapkan parameter scrcpy (mode: {mode})...")
             if mode == "mirror":
                 args = [self.scrcpy_path]
@@ -36,16 +44,40 @@ class ScrcpyManager:
             if cam_id and mode == "camera":
                 args.append(f"--camera-id={cam_id}")
 
-            # Konfigurasi Resolusi
+            # Konfigurasi Resolusi & Camera Size
+            # PENTING: scrcpy 4.0 tidak boleh memakai --camera-size DAN --camera-ar bersamaan.
+            # Strategi:
+            #   - AR != Auto  → gunakan --camera-ar saja (scrcpy hitung size sendiri)
+            #   - AR == Auto  → gunakan --camera-size (hitung dari resolusi)
             res = settings_data.get("resolution", "1080")
-            if res and res.lower() != "auto":
-                args.append(f"--max-size={res}")
-
-            # Konfigurasi Aspect Ratio
             if mode == "camera":
                 ar = settings_data.get("aspect_ratio", "Auto")
                 if ar and ar.lower() != "auto":
+                    # Biarkan scrcpy menentukan ukuran; kita hanya set aspect ratio
                     args.append(f"--camera-ar={ar}")
+                    # Tetap set FPS melalui --camera-fps; resolusi diabaikan
+                elif res and res.lower() != "auto":
+                    # Tidak ada AR override → set camera-size
+                    std_map = {
+                        "720":  (1280, 720),
+                        "1080": (1920, 1080),
+                        "1920": (1920, 1080),
+                    }
+                    if res in std_map:
+                        w, h = std_map[res]
+                        args.append(f"--camera-size={w}x{h}")
+                    elif "x" in res.lower():
+                        args.append(f"--camera-size={res}")
+                    elif res.isdigit():
+                        h = int(res)
+                        w = (int(h * 16 / 9) // 2) * 2
+                        args.append(f"--camera-size={w}x{h}")
+                    else:
+                        args.append(f"--max-size={res}")
+            elif res and res.lower() != "auto":
+                # Mirror mode
+                args.append(f"--max-size={res}")
+
 
             # Konfigurasi FPS
             fps = settings_data.get("fps", 30)
@@ -192,11 +224,16 @@ class ScrcpyManager:
         """Meneruskan output scrcpy ke log aplikasi agar error tidak tersembunyi."""
         if process.stdout is None:
             return
+        if mode not in self.process_logs:
+            self.process_logs[mode] = []
         try:
             for line in process.stdout:
                 message = line.strip()
                 if message:
                     self.logger.info(f"scrcpy ({mode}): {message}")
+                    self.process_logs[mode].append(message)
+                    if len(self.process_logs[mode]) > 30:
+                        self.process_logs[mode].pop(0)
         except Exception:
             pass
 
@@ -209,6 +246,7 @@ class ScrcpyManager:
             return
 
         if self.is_running(mode):
+            self._manual_stop[mode] = True
             self.logger.info(f"Menghentikan proses scrcpy ({mode})...")
             proc = self.processes[mode]
             del self.processes[mode]

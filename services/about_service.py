@@ -49,6 +49,7 @@ class AboutService:
             "build_date": BuildInfo.get_build_date(),
             "commit": BuildInfo.get_commit(),
             "branch": BuildInfo.get_branch(),
+            "build_platform": getattr(build_info, "BUILD_PLATFORM", "unknown") if build_info else "unknown",
             "is_dirty": BuildInfo.is_dirty(),
             "os": platform.system(),
             "os_release": platform.release(),
