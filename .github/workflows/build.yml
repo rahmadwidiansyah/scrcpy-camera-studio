@@ -8,7 +8,7 @@ on:
 
 # ── Shared env ────────────────────────────────────────────────────
 env:
-  APP_NAME: CameraStudio
+  APP_NAME: SCRCPYCameraStudio
   PYTHON_VERSION: '3.12'
 
 jobs:
@@ -22,7 +22,6 @@ jobs:
       tag:     ${{ steps.extract.outputs.tag }}
     steps:
       - uses: actions/checkout@v4
-
       - name: Extract version from config/version.py
         id: extract
         run: |
@@ -38,21 +37,19 @@ jobs:
     needs: get-version
     runs-on: windows-latest
     env:
-      ARTIFACT_NAME: ${{ env.APP_NAME }}-v${{ needs.get-version.outputs.version }}-win64
+      # FIX: Mengganti ${{ env.APP_NAME }} menjadi teks statis CameraStudio
+      ARTIFACT_NAME: CameraStudio-v${{ needs.get-version.outputs.version }}-win64
     steps:
       - uses: actions/checkout@v4
-
       - name: Set up Python ${{ env.PYTHON_VERSION }}
         uses: actions/setup-python@v5
         with:
           python-version: ${{ env.PYTHON_VERSION }}
-
       - name: Install dependencies
         run: |
           python -m pip install --upgrade pip
           pip install pyinstaller packaging customtkinter darkdetect requests
           if (Test-Path requirements.txt) { pip install -r requirements.txt }
-
       - name: Inject build metadata
         shell: python
         run: |
@@ -67,7 +64,6 @@ jobs:
           IS_DIRTY     = False
           """
           pathlib.Path('config/build_info.py').write_text('\n'.join(l.lstrip() for l in content.strip().splitlines()))
-
       - name: Build EXE with PyInstaller
         run: |
           pyinstaller --onefile --windowed `
@@ -75,14 +71,12 @@ jobs:
             --add-data "config;config" `
             --name "${{ env.APP_NAME }}" `
             main.py
-
       - name: Package artifact (zip)
         run: |
           $ART = "${{ env.ARTIFACT_NAME }}"
           New-Item -ItemType Directory -Path "release" -Force
           Compress-Archive -Path "dist\${{ env.APP_NAME }}.exe" `
             -DestinationPath "release\${ART}.zip"
-
       - name: Upload Windows artifact
         uses: actions/upload-artifact@v4
         with:
@@ -96,24 +90,21 @@ jobs:
     needs: get-version
     runs-on: ubuntu-latest
     env:
-      ARTIFACT_NAME: ${{ env.APP_NAME }}-v${{ needs.get-version.outputs.version }}-linux-x64
+      # FIX
+      ARTIFACT_NAME: CameraStudio-v${{ needs.get-version.outputs.version }}-linux-x64
     steps:
       - uses: actions/checkout@v4
-
       - name: Set up Python ${{ env.PYTHON_VERSION }}
         uses: actions/setup-python@v5
         with:
           python-version: ${{ env.PYTHON_VERSION }}
-
       - name: Install system dependencies
         run: sudo apt-get update && sudo apt-get install -y python3-tk tk-dev
-
       - name: Install Python dependencies
         run: |
           python -m pip install --upgrade pip
           pip install pyinstaller packaging customtkinter darkdetect requests
           if [ -f requirements.txt ]; then pip install -r requirements.txt; fi
-
       - name: Inject build metadata
         run: |
           python - <<'EOF'
@@ -129,7 +120,6 @@ jobs:
           """
           pathlib.Path('config/build_info.py').write_text('\n'.join(l.lstrip() for l in content.strip().splitlines()))
           EOF
-
       - name: Build Linux binary
         run: |
           pyinstaller --onefile --windowed \
@@ -137,13 +127,11 @@ jobs:
             --add-data "config:config" \
             --name "${{ env.APP_NAME }}" \
             main.py
-
       - name: Package artifact (tar.gz)
         run: |
           mkdir -p release
           tar -czf "release/${{ env.ARTIFACT_NAME }}.tar.gz" \
             -C dist "${{ env.APP_NAME }}"
-
       - name: Upload Linux x64 artifact
         uses: actions/upload-artifact@v4
         with:
@@ -157,24 +145,21 @@ jobs:
     needs: get-version
     runs-on: ubuntu-24.04-arm
     env:
-      ARTIFACT_NAME: ${{ env.APP_NAME }}-v${{ needs.get-version.outputs.version }}-linux-arm64
+      # FIX
+      ARTIFACT_NAME: CameraStudio-v${{ needs.get-version.outputs.version }}-linux-arm64
     steps:
       - uses: actions/checkout@v4
-
       - name: Set up Python ${{ env.PYTHON_VERSION }}
         uses: actions/setup-python@v5
         with:
           python-version: ${{ env.PYTHON_VERSION }}
-
       - name: Install system dependencies
         run: sudo apt-get update && sudo apt-get install -y python3-tk tk-dev
-
       - name: Install Python dependencies
         run: |
           python -m pip install --upgrade pip
           pip install pyinstaller packaging customtkinter darkdetect requests
           if [ -f requirements.txt ]; then pip install -r requirements.txt; fi
-
       - name: Inject build metadata
         run: |
           python - <<'EOF'
@@ -190,7 +175,6 @@ jobs:
           """
           pathlib.Path('config/build_info.py').write_text('\n'.join(l.lstrip() for l in content.strip().splitlines()))
           EOF
-
       - name: Build Linux arm64 binary
         run: |
           pyinstaller --onefile --windowed \
@@ -198,13 +182,11 @@ jobs:
             --add-data "config:config" \
             --name "${{ env.APP_NAME }}" \
             main.py
-
       - name: Package artifact (tar.gz)
         run: |
           mkdir -p release
           tar -czf "release/${{ env.ARTIFACT_NAME }}.tar.gz" \
             -C dist "${{ env.APP_NAME }}"
-
       - name: Upload Linux arm64 artifact
         uses: actions/upload-artifact@v4
         with:
@@ -218,21 +200,19 @@ jobs:
     needs: get-version
     runs-on: macos-latest
     env:
-      ARTIFACT_NAME: ${{ env.APP_NAME }}-v${{ needs.get-version.outputs.version }}-macos-arm64
+      # FIX
+      ARTIFACT_NAME: CameraStudio-v${{ needs.get-version.outputs.version }}-macos-arm64
     steps:
       - uses: actions/checkout@v4
-
       - name: Set up Python ${{ env.PYTHON_VERSION }}
         uses: actions/setup-python@v5
         with:
           python-version: ${{ env.PYTHON_VERSION }}
-
       - name: Install Python dependencies
         run: |
           python -m pip install --upgrade pip
           pip install pyinstaller packaging customtkinter darkdetect requests
           if [ -f requirements.txt ]; then pip install -r requirements.txt; fi
-
       - name: Inject build metadata
         run: |
           python - <<'EOF'
@@ -248,7 +228,6 @@ jobs:
           """
           pathlib.Path('config/build_info.py').write_text('\n'.join(l.lstrip() for l in content.strip().splitlines()))
           EOF
-
       - name: Build macOS binary
         run: |
           pyinstaller --onefile --windowed \
@@ -256,13 +235,11 @@ jobs:
             --add-data "config:config" \
             --name "${{ env.APP_NAME }}" \
             main.py
-
       - name: Package artifact (zip)
         run: |
           mkdir -p release
           zip -j "release/${{ env.ARTIFACT_NAME }}.zip" \
             "dist/${{ env.APP_NAME }}"
-
       - name: Upload macOS arm64 artifact
         uses: actions/upload-artifact@v4
         with:
@@ -276,21 +253,19 @@ jobs:
     needs: get-version
     runs-on: macos-13
     env:
-      ARTIFACT_NAME: ${{ env.APP_NAME }}-v${{ needs.get-version.outputs.version }}-macos-x64
+      # FIX
+      ARTIFACT_NAME: CameraStudio-v${{ needs.get-version.outputs.version }}-macos-x64
     steps:
       - uses: actions/checkout@v4
-
       - name: Set up Python ${{ env.PYTHON_VERSION }}
         uses: actions/setup-python@v5
         with:
           python-version: ${{ env.PYTHON_VERSION }}
-
       - name: Install Python dependencies
         run: |
           python -m pip install --upgrade pip
           pip install pyinstaller packaging customtkinter darkdetect requests
           if [ -f requirements.txt ]; then pip install -r requirements.txt; fi
-
       - name: Inject build metadata
         run: |
           python - <<'EOF'
@@ -306,7 +281,6 @@ jobs:
           """
           pathlib.Path('config/build_info.py').write_text('\n'.join(l.lstrip() for l in content.strip().splitlines()))
           EOF
-
       - name: Build macOS x64 binary
         run: |
           pyinstaller --onefile --windowed \
@@ -314,13 +288,11 @@ jobs:
             --add-data "config:config" \
             --name "${{ env.APP_NAME }}" \
             main.py
-
       - name: Package artifact (zip)
         run: |
           mkdir -p release
           zip -j "release/${{ env.ARTIFACT_NAME }}.zip" \
             "dist/${{ env.APP_NAME }}"
-
       - name: Upload macOS x64 artifact
         uses: actions/upload-artifact@v4
         with:
@@ -328,7 +300,7 @@ jobs:
           path: release/${{ env.ARTIFACT_NAME }}.zip
 
   # ==============================================================
-  # JOB 6: CREATE GITHUB RELEASE — runs only after all builds pass
+  # JOB 6: CREATE GITHUB RELEASE
   # ==============================================================
   release:
     name: Create GitHub Release
@@ -347,7 +319,6 @@ jobs:
         uses: actions/download-artifact@v4
         with:
           path: release/
-
       - name: Generate checksums.txt
         run: |
           cd release
@@ -355,13 +326,11 @@ jobs:
             sha256sum "$f"
           done > checksums.txt
           cat checksums.txt
-
       - name: Flatten release directory
         run: |
           mkdir -p flat
           find release -type f \( -name "*.zip" -o -name "*.tar.gz" \) -exec cp {} flat/ \;
           cp release/checksums.txt flat/
-
       - name: Create GitHub Release and upload assets
         uses: softprops/action-gh-release@v2
         with:
@@ -369,7 +338,6 @@ jobs:
           name:     "Camera Studio ${{ needs.get-version.outputs.tag }}"
           body: |
             ## Camera Studio ${{ needs.get-version.outputs.tag }}
-
             ### Downloads
             | Platform | File |
             |----------|------|
@@ -378,7 +346,7 @@ jobs:
             | Linux arm64 | `CameraStudio-${{ needs.get-version.outputs.tag }}-linux-arm64.tar.gz` |
             | macOS arm64 | `CameraStudio-${{ needs.get-version.outputs.tag }}-macos-arm64.zip` |
             | macOS x64   | `CameraStudio-${{ needs.get-version.outputs.tag }}-macos-x64.zip` |
-
+            
             ### Verification
             Verify file integrity using `checksums.txt` (SHA-256).
           files: |
