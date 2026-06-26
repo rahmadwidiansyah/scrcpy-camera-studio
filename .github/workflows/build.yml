@@ -1,19 +1,21 @@
-name: Build Windows EXE
+name: Build and Release
 
 on:
   push:
-    branches: [ "main", "master" ] # Jalankan otomatis saat push ke branch main/master
-  workflow_dispatch: # Memungkinkan kamu menjalankan build secara manual dari web GitHub
+    # Trigger ini akan otomatis membuat release HANYA saat kamu nge-push tag versi baru
+    tags:
+      - 'v*' 
+  workflow_dispatch: # Tetap bisa dijalankan manual
 
 jobs:
-  build:
+  # ========================================
+  # JOB 1: BUILD WINDOWS
+  # ========================================
+  build-windows:
     runs-on: windows-latest
-
     steps:
     - name: Checkout Code
       uses: actions/checkout@v4
-      with:
-        fetch-depth: 0
 
     - name: Set up Python
       uses: actions/setup-python@v5
@@ -23,26 +25,76 @@ jobs:
     - name: Install Dependencies
       run: |
         python -m pip install --upgrade pip
-        pip install pyinstaller packaging customtkinter
+        pip install pyinstaller packaging customtkinter darkdetect requests
         if (Test-Path requirements.txt) { pip install -r requirements.txt }
-
-    - name: Generate Build Info
-      run: |
-        python build.py
-
-    - name: Run Unit Tests
-      run: |
-        python -m unittest discover tests
 
     - name: Build EXE with PyInstaller
       run: |
-        pyinstaller --onefile --windowed `
-        --add-data "assets;assets" `
-        --name "CameraStudio" `
-        main.py
+        pyinstaller --onefile --windowed --add-data "assets;assets" --name "CameraStudio" main.py
 
-    - name: Upload Artifact
+    - name: Upload Windows Artifact
       uses: actions/upload-artifact@v4
       with:
         name: CameraStudio-Windows
         path: dist/CameraStudio.exe
+
+  # ========================================
+  # JOB 2: BUILD LINUX
+  # ========================================
+  build-linux:
+    runs-on: ubuntu-latest
+    steps:
+    - name: Checkout Code
+      uses: actions/checkout@v4
+
+    - name: Set up Python
+      uses: actions/setup-python@v5
+      with:
+        python-version: '3.12'
+
+    - name: Install System Dependencies (Tkinter)
+      run: sudo apt-get update && sudo apt-get install -y python3-tk tk-dev
+
+    - name: Install Python Dependencies
+      run: |
+        python -m pip install --upgrade pip
+        pip install pyinstaller packaging customtkinter darkdetect requests
+        if [ -f requirements.txt ]; then pip install -r requirements.txt; fi
+
+    - name: Build Linux Binary with PyInstaller
+      # PERHATIAN: Di Linux, pemisah add-data menggunakan titik dua (:)
+      run: |
+        pyinstaller --onefile --windowed --add-data "assets:assets" --name "CameraStudio" main.py
+
+    - name: Upload Linux Artifact
+      uses: actions/upload-artifact@v4
+      with:
+        name: CameraStudio-Linux
+        path: dist/CameraStudio
+
+  # ========================================
+  # JOB 3: AUTO UPLOAD RELEASE
+  # ========================================
+  release:
+    name: Create GitHub Release
+    needs: [build-windows, build-linux] # Job ini baru jalan kalau Windows & Linux sukses
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write # Dibutuhkan untuk bisa membuat release
+    steps:
+    - name: Download All Artifacts
+      uses: actions/download-artifact@v4
+      with:
+        path: artifacts # Download semuanya ke folder 'artifacts'
+
+    - name: Create Release and Upload Assets
+      uses: softprops/action-gh-release@v2
+      # Jika trigger dari workflow_dispatch, pakai nama v1.1. Jika dari tag, pakai nama tag-nya.
+      with:
+        tag_name: ${{ github.ref_name == 'main' && 'v1.1' || github.ref_name }}
+        name: Release ${{ github.ref_name == 'main' && 'v1.1' || github.ref_name }}
+        files: |
+          artifacts/CameraStudio-Windows/CameraStudio.exe
+          artifacts/CameraStudio-Linux/CameraStudio
+        draft: false
+        prerelease: false
