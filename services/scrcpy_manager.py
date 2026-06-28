@@ -7,6 +7,36 @@ from enum import Enum
 from config.config import Config
 
 
+def get_clean_subprocess_env() -> dict:
+    """Return an environment safe for launching bundled ELF/GTK apps.
+
+    Required sanitation: remove dynamic-loader variables that can break
+    fontconfig/pango symbol resolution inside child processes.
+
+    Preserves PATH/HOME/GUI session variables.
+    """
+    env = os.environ.copy()
+    for k in ("LD_LIBRARY_PATH", "LD_PRELOAD", "PYTHONHOME", "PYTHONPATH"):
+        env.pop(k, None)
+
+    # Explicitly preserve expected keys (copy() already does this, but keep intent clear).
+    # These are not removed.
+    _preserve = (
+        "PATH",
+        "HOME",
+        "DISPLAY",
+        "WAYLAND_DISPLAY",
+        "XDG_RUNTIME_DIR",
+        "DBUS_SESSION_BUS_ADDRESS",
+        "TERM",
+    )
+    for k in _preserve:
+        env.setdefault(k, os.environ.get(k))
+
+    return env
+
+
+
 class CameraState(Enum):
     STOPPED = 0
     STARTING = 1
@@ -74,7 +104,7 @@ class ScrcpyManager:
             self._error_reported[mode] = False
             self._last_return_codes[mode] = None
             self.process_logs[mode] = []
-            
+
             scrcpy_path = self._resolve_scrcpy_path()
             if not scrcpy_path:
                 self.logger.error("Tidak dapat menemukan scrcpy yang dapat dieksekusi.")
@@ -162,7 +192,7 @@ class ScrcpyManager:
                 args.append("--audio-source=mic")
             elif audio_source == "Playback":
                 args.append("--audio-source=playback")
-            # Jika "Both", maka scrcpy tidak mendukung input dua source sekaligus via satu parameter secara native, tapi default scrcpy adalah playback (media out). 
+            # Jika "Both", maka scrcpy tidak mendukung input dua source sekaligus via satu parameter secara native, tapi default scrcpy adalah playback (media out).
             # Jika user memilih "Both", kita biarkan default (playback) atau biarkan kosong jika scrcpy default playback.
             # Mari kita set explicit --audio-source=playback untuk Both/Playback agar aman.
 
@@ -198,17 +228,31 @@ class ScrcpyManager:
 
             # Menyembunyikan jendela console bawaan di Windows
             creationflags = subprocess.CREATE_NO_WINDOW if os.name == 'nt' else 0
-            
+
             self.logger.info(f"Menjalankan: {' '.join(args)}")
 
             # Menjalankan proses scrcpy
+            # Use the centralized helper so all scrcpy/adb launches receive a sanitized
+            # environment (no LD_* / PYTHON* contamination on Linux packaged builds).
+            # Windows behavior is unchanged: the helper just returns os.environ.copy() there.
+            env = get_clean_subprocess_env()
+            self.logger.debug(
+                "Launching %s with sanitized env: "
+                "LD_LIBRARY_PATH=%s LD_PRELOAD=%s",
+                scrcpy_path,
+                env.get("LD_LIBRARY_PATH"),
+                env.get("LD_PRELOAD"),
+            )
+
             process = subprocess.Popen(
                 args,
                 stdout=subprocess.PIPE,
                 stderr=subprocess.STDOUT,
                 text=True,
-                creationflags=creationflags
+                creationflags=creationflags,
+                env=env,
             )
+
             self.processes[mode] = process
             self._last_return_codes[mode] = None
 
@@ -273,6 +317,16 @@ class ScrcpyManager:
 
         creationflags = subprocess.CREATE_NO_WINDOW if os.name == 'nt' else 0
 
+        # Use the centralized sanitized environment helper.
+        env = get_clean_subprocess_env()
+        self.logger.debug(
+            "Launching %s with sanitized env: "
+            "LD_LIBRARY_PATH=%s LD_PRELOAD=%s",
+            scrcpy_path,
+            env.get("LD_LIBRARY_PATH"),
+            env.get("LD_PRELOAD"),
+        )
+
         try:
             result = subprocess.run(
                 args,
@@ -280,6 +334,7 @@ class ScrcpyManager:
                 stderr=subprocess.STDOUT,
                 text=True,
                 creationflags=creationflags,
+                env=env,
                 timeout=8
             )
         except FileNotFoundError as e:
@@ -461,7 +516,7 @@ class ScrcpyManager:
 
         if mode not in self.processes:
             return False
-            
+
         process = self.processes[mode]
         # poll() mengembalikan None jika proses masih berjalan
         # Jika mengembalikan angka (return code), berarti proses sudah berhenti
@@ -470,7 +525,7 @@ class ScrcpyManager:
             if mode in self.processes:
                 del self.processes[mode] # Bersihkan referensi proses yang sudah mati
             return False
-            
+
         return True
 
     def get_local_version(self):
@@ -485,12 +540,23 @@ class ScrcpyManager:
             else:
                 creationflags = 0
 
+            # Use centralized sanitized env helper for Linux packaged builds.
+            env = get_clean_subprocess_env()
+            self.logger.debug(
+                "Launching %s with sanitized env: "
+                "LD_LIBRARY_PATH=%s LD_PRELOAD=%s",
+                scrcpy_path,
+                env.get("LD_LIBRARY_PATH"),
+                env.get("LD_PRELOAD"),
+            )
+
             result = subprocess.run(
                 [scrcpy_path, "--version"],
                 stdout=subprocess.PIPE,
                 stderr=subprocess.PIPE,
                 text=True,
                 creationflags=creationflags,
+                env=env,
                 timeout=3
             )
             for line in result.stdout.splitlines():
@@ -516,7 +582,7 @@ class ScrcpyManager:
                 data = json.loads(response.read().decode("utf-8"))
                 tag_name = data.get("tag_name", "").strip()
                 latest_ver = tag_name.lstrip("v")
-                
+
                 # Cari URL download zip 64-bit untuk Windows
                 download_url = None
                 assets = data.get("assets", [])
@@ -525,7 +591,7 @@ class ScrcpyManager:
                     if "win64" in name and name.endswith(".zip"):
                         download_url = asset.get("browser_download_url")
                         break
-                        
+
                 return latest_ver, download_url
         except Exception as e:
             self.logger.error(f"Gagal mengambil versi scrcpy terbaru dari GitHub: {e}")

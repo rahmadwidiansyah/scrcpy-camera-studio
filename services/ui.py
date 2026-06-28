@@ -2191,10 +2191,12 @@ class MirrorControlCenter(ctk.CTkToplevel):
 
     def _adb(self, *extra):
         import subprocess; from config.config import Config
+        from services.scrcpy_manager import get_clean_subprocess_env
         serial = self._serial()
         cmd = [Config.get_bin_path("adb")] + (["-s", serial] if serial else []) + list(extra)
         flags = subprocess.CREATE_NO_WINDOW if os.name == "nt" else 0
-        subprocess.run(cmd, creationflags=flags, timeout=5)
+        env = get_clean_subprocess_env()
+        subprocess.run(cmd, creationflags=flags, env=env, timeout=5)
 
     def _execute_adb_key(self, code):
         threading.Thread(target=lambda: self._adb("shell", "input", "keyevent", str(code)), daemon=True).start()
@@ -2209,14 +2211,16 @@ class MirrorControlCenter(ctk.CTkToplevel):
         def worker():
             try:
                 import subprocess; from config.config import Config
+                from services.scrcpy_manager import get_clean_subprocess_env
                 serial = self._serial()
                 adb = Config.get_bin_path("adb")
                 flags = subprocess.CREATE_NO_WINDOW if os.name == "nt" else 0
+                env = get_clean_subprocess_env()
                 cmd_get = [adb] + (["-s", serial] if serial else []) + ["shell", "settings", "get", "system", "user_rotation"]
-                out = subprocess.check_output(cmd_get, text=True, stderr=subprocess.DEVNULL).strip()
+                out = subprocess.check_output(cmd_get, text=True, stderr=subprocess.DEVNULL, env=env).strip()
                 next_rot = (int(out) if out.isdigit() else 0 + 1) % 4
                 cmd_set = [adb] + (["-s", serial] if serial else []) + ["shell", "settings", "put", "system", "user_rotation", str(next_rot)]
-                subprocess.run(cmd_set, creationflags=flags, timeout=5)
+                subprocess.run(cmd_set, creationflags=flags, env=env, timeout=5)
             except Exception: pass
         threading.Thread(target=worker, daemon=True).start()
 
@@ -2224,8 +2228,10 @@ class MirrorControlCenter(ctk.CTkToplevel):
         def worker():
             try:
                 import subprocess, time; from config.config import Config
+                from services.scrcpy_manager import get_clean_subprocess_env
                 adb = Config.get_bin_path("adb"); serial = self._serial()
                 flags = subprocess.CREATE_NO_WINDOW if os.name == "nt" else 0
+                env = get_clean_subprocess_env()
                 settings = getattr(self.parent, "current_settings", {})
                 ss_dir = settings.get("screenshot_path", "") or os.path.join(os.path.expanduser("~"), "Pictures", "scrcpy_studio")
                 os.makedirs(ss_dir, exist_ok=True)
@@ -2236,7 +2242,7 @@ class MirrorControlCenter(ctk.CTkToplevel):
                     [adb] + s + ["shell", "screencap", "-p", remote],
                     [adb] + s + ["pull", remote, local],
                     [adb] + s + ["shell", "rm", remote],
-                ]: subprocess.run(cmd, creationflags=flags, timeout=8)
+                ]: subprocess.run(cmd, creationflags=flags, env=env, timeout=8)
                 self.parent.after(0, lambda: self.parent.append_log(f"Screenshot saved: {local}"))
             except Exception as e:
                 self.parent.after(0, lambda: self.parent.append_log(f"Screenshot failed: {e}"))

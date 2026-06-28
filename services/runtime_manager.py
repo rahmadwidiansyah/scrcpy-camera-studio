@@ -22,15 +22,15 @@ class RuntimeManager:
         exe_name = f"{name}.exe" if os.name == 'nt' else name
         bin_path = os.path.join(DirectoryManager.BIN_DIR, exe_name)
         bin_path_scrcpy = os.path.join(DirectoryManager.BIN_DIR, "scrcpy", exe_name)
-        
+
         # Prioritas 1: Cek di folder bin/ lokal dan subfolder scrcpy/
         if os.path.exists(bin_path) or os.path.exists(bin_path_scrcpy):
             return True
-            
+
         # Prioritas 2: Cek di System PATH (Global)
         if shutil.which(name):
             return True
-            
+
         # Penanganan khusus untuk SDL2 (bawaan scrcpy)
         if name.lower() == "sdl2":
             sdl_lib = "SDL2.dll" if os.name == 'nt' else "libSDL2.so"
@@ -58,18 +58,18 @@ class RuntimeManager:
         exe_name = f"{name}.exe" if os.name == 'nt' else name
         bin_path = os.path.join(DirectoryManager.BIN_DIR, exe_name)
         bin_path_scrcpy = os.path.join(DirectoryManager.BIN_DIR, "scrcpy", exe_name)
-        
+
         # Prioritas 1: Gunakan biner dari folder bin/ lokal (atau subfolder scrcpy/) jika ada
         if os.path.exists(bin_path):
             return os.path.abspath(bin_path)
         if os.path.exists(bin_path_scrcpy):
             return os.path.abspath(bin_path_scrcpy)
-            
+
         # Prioritas 2: Cari di PATH sistem jika tidak ditemukan di folder bin/
         system_path = shutil.which(name)
         if system_path:
             return system_path
-            
+
         # Fallback terakhir jika benar-benar tidak ditemukan di mana pun
         return bin_path_scrcpy if os.path.exists(os.path.join(DirectoryManager.BIN_DIR, "scrcpy")) else bin_path
 
@@ -131,12 +131,17 @@ class RuntimeManager:
 
         try:
             creationflags = subprocess.CREATE_NO_WINDOW if os.name == 'nt' else 0
+            # Centralized sanitized env: avoids LD_*/PYTHON* contamination on Linux.
+            # On Windows the helper just returns os.environ.copy().
+            from services.scrcpy_manager import get_clean_subprocess_env
+            env = get_clean_subprocess_env()
             result = subprocess.run(
                 args,
                 stdout=subprocess.PIPE,
                 stderr=subprocess.PIPE,
                 text=True,
                 creationflags=creationflags,
+                env=env,
                 timeout=3
             )
             output = result.stdout + result.stderr
@@ -170,7 +175,7 @@ class RuntimeManager:
             raise ValueError(f"No download URL configured for runtime '{name}' on platform '{platform.system()}'.")
 
         dest_path = os.path.join(DirectoryManager.CACHE_DIR, f"{name}_runtime.zip")
-        
+
         downloader = DownloadManager(
             url=url,
             dest_path=dest_path,

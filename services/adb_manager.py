@@ -244,12 +244,17 @@ class ADBManager:
         """Jalankan perintah ADB dan kembalikan CompletedProcess, atau None jika timeout."""
         try:
             flags = subprocess.CREATE_NO_WINDOW if os.name == "nt" else 0
+            # Centralized sanitized env: no LD_*/PYTHON* contamination on Linux packaged builds.
+            # Windows behavior is unchanged (helper just returns os.environ.copy()).
+            from services.scrcpy_manager import get_clean_subprocess_env
+            env = get_clean_subprocess_env()
             return subprocess.run(
                 [self.adb_path] + args,
                 stdout=subprocess.PIPE,
                 stderr=subprocess.PIPE,
                 text=True,
                 creationflags=flags,
+                env=env,
                 timeout=timeout,
             )
         except subprocess.TimeoutExpired:
