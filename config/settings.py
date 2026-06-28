@@ -26,6 +26,8 @@ class SettingsManager:
             "camera_device": "",       # serial device yang dipakai Camera
             "mirror_device": "",       # serial device yang dipakai Mirror
             "screenshot_path": "",
+            "mirror_resolution": "Auto",
+            "mirror_bitrate": "Auto",
             "aspect_ratio": "Auto",
             "audio_source": "Playback"
         }

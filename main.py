@@ -53,12 +53,18 @@ def poll_devices_worker(app, adb_manager, scrcpy_manager, settings):
             app.after(0, lambda d=devices: app.update_device_list(d))
 
             camera_serial = (settings.get("camera_device") or settings.get("target_device") or "").strip()
-            if camera_serial and getattr(app, "_last_camera_scan_serial", None) != camera_serial:
-                app._last_camera_scan_serial = camera_serial
-                cameras = scrcpy_manager.list_cameras(camera_serial)
-                app.after(0, lambda c=cameras: app.update_camera_options(c))
-            elif not camera_serial:
+            last_serial = getattr(app, "_last_camera_scan_serial", None)
+            last_had_cameras = getattr(app, "_last_camera_scan_had_cameras", None)
+            if camera_serial:
+                # CRITICAL: Do not trigger list_cameras if scrcpy is actively running, as it will lock/interrupt the camera resource.
+                if (last_serial != camera_serial or last_had_cameras is False) and not scrcpy_manager.is_camera_active():
+                    app._last_camera_scan_serial = camera_serial
+                    cameras = scrcpy_manager.list_cameras(camera_serial)
+                    app._last_camera_scan_had_cameras = bool(cameras)
+                    app.after(0, lambda c=cameras: app.update_camera_options(c))
+            else:
                 app._last_camera_scan_serial = None
+                app._last_camera_scan_had_cameras = None
                 app.after(0, lambda: app.update_camera_options([]))
         except Exception as e:
             exception_logger.error(f"Error in poll_devices_worker: {e}", exc_info=True)

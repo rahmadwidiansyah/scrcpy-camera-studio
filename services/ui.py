@@ -399,8 +399,39 @@ class CameraStudioUI(ctk.CTk):
         self.opt_mirror_res.set(str(settings_data.get("resolution", "Auto")))
         if hasattr(self, "var_mirror"):
             self.var_mirror.set("Mirrored" if settings_data.get("mirror", False) else "Normal")
+        if hasattr(self, "btn_mirror") or hasattr(self, "btn_rotate"):
+            self._refresh_camera_transform_buttons()
         if hasattr(self, "var_screenshot_path"):
             self.var_screenshot_path.set(settings_data.get("screenshot_path", ""))
+        if hasattr(self, "opt_mirror_res"):
+            self.opt_mirror_res.set(str(settings_data.get("mirror_resolution", settings_data.get("resolution", "Auto"))))
+        if hasattr(self, "opt_mirror_bit"):
+            self.opt_mirror_bit.set(str(settings_data.get("mirror_bitrate", settings_data.get("bitrate", "Auto"))))
+
+    def _refresh_camera_transform_buttons(self):
+        mirror = getattr(self, "current_settings", {}).get("mirror", False)
+        rotate = getattr(self, "current_settings", {}).get("rotate", 0) or 0
+
+        self.btn_mirror.configure(
+            text=f"🪞 {'Mirrored' if mirror else 'Mirror'}",
+            fg_color=T.GREEN if mirror else T.BG_2,
+            hover_color=T.GREEN if mirror else T.BG_3,
+        )
+
+        self.btn_rotate.configure(
+            text=f"↻ {rotate}°",
+        )
+
+    def _on_camera_mirror_toggle(self):
+        mirror = not getattr(self, "current_settings", {}).get("mirror", False)
+        self._on_setting_change("mirror", mirror)
+        self._refresh_camera_transform_buttons()
+
+    def _on_camera_rotate_click(self):
+        rotate = (getattr(self, "current_settings", {}).get("rotate", 0) or 0) + 90
+        rotate = rotate % 360
+        self._on_setting_change("rotate", rotate)
+        self._refresh_camera_transform_buttons()
 
     # ── log ──────────────────────────────────────────────────
     def append_log(self, message):
@@ -766,31 +797,38 @@ class CameraStudioUI(ctk.CTk):
                                      command=lambda v: self._on_setting_change("aspect_ratio", v)),
                     row=0, col=0)
 
-        self.var_mirror = ctk.StringVar(value="Normal")
-        _card_field(tr_card, "Mirror",
-                    themed_segmented(tr_card, ["Normal", "Mirrored"], self.var_mirror,
-                                     command=lambda v: self._on_setting_change("mirror", v == "Mirrored")),
-                    row=0, col=1)
+        btn_group = ctk.CTkFrame(tr_card, fg_color="transparent")
+        btn_group.grid_columnconfigure((0, 1), weight=0)
 
-        icon_up = "↑"
-        icon_right = "→"
-        icon_down = "↓"
-        icon_left = "←"
-        self.var_rot = ctk.StringVar(value=icon_up)
-        seg_rot = ctk.CTkSegmentedButton(
-            tr_card,
-            values=[icon_up, icon_right, icon_down, icon_left],
-            variable=self.var_rot,
-            command=lambda v: self._on_setting_change(
-                "rotate",
-                {icon_up: 0, icon_right: 90, icon_down: 180, icon_left: 270}.get(v, 0)
-            ),
-            font=("Segoe UI Symbol", 16, "bold"),
-            selected_color=T.CRIMSON, selected_hover_color=T.CRIMSON_H,
-            unselected_color=T.BG_2, unselected_hover_color=T.BG_3,
-            text_color=T.TEXT_0, corner_radius=T.R_SM, height=34,
+        self.btn_mirror = ctk.CTkButton(
+            btn_group,
+            text="🪞 Mirror",
+            command=self._on_camera_mirror_toggle,
+            width=120,
+            height=36,
+            font=(T.FONT, 12, "bold"),
+            corner_radius=T.R_SM,
+            fg_color=T.BG_2,
+            hover_color=T.BG_3,
+            text_color=T.TEXT_0,
         )
-        _card_field(tr_card, "Rotate", seg_rot, row=2, col=0, colspan=2)
+        self.btn_mirror.grid(row=0, column=0, sticky="w", padx=(0, 8))
+
+        self.btn_rotate = ctk.CTkButton(
+            btn_group,
+            text="↻ 90°",
+            command=self._on_camera_rotate_click,
+            width=90,
+            height=36,
+            font=(T.FONT, 14, "bold"),
+            corner_radius=T.R_SM,
+            fg_color=T.BG_2,
+            hover_color=T.BG_3,
+            text_color=T.TEXT_0,
+        )
+        self.btn_rotate.grid(row=0, column=1, sticky="e")
+
+        _card_field(tr_card, "Mirror & Rotate", btn_group, row=0, col=1)
 
         # Output
         _section_header(scroll, "Output", row=6)
@@ -806,11 +844,6 @@ class CameraStudioUI(ctk.CTk):
         self.opt_audio = themed_optmenu(out_card, ["Playback", "Mic", "Both", "Off"],
                                         command=lambda v: self._on_setting_change("audio_source", v))
         _card_field(out_card, "Audio Source", self.opt_audio, row=0, col=1)
-
-        _build_screenshot_row(out_card, row=2, on_change=lambda v: self._on_setting_change("screenshot_path", v))
-        self.var_screenshot_path = out_card._ss_var
-        self.ent_screenshot_path = out_card._ss_entry
-        self.btn_browse_path     = out_card._ss_browse
 
     # ═══════════════════════════════════════════════════════════
     #  PAGE: MIRROR  (full layout fix)
@@ -863,6 +896,11 @@ class CameraStudioUI(ctk.CTk):
             command=lambda v: self._on_setting_change("mirror_bitrate", v)
         )
         _card_field(cfg_card, "Bitrate", self.opt_mirror_bit, row=0, col=1)
+
+        _build_screenshot_row(cfg_card, row=2, on_change=lambda v: self._on_setting_change("screenshot_path", v))
+        self.var_screenshot_path = cfg_card._ss_var
+        self.ent_screenshot_path = cfg_card._ss_entry
+        self.btn_browse_path     = cfg_card._ss_browse
 
         # Launch
         _section_header(scroll, "Control", row=4)

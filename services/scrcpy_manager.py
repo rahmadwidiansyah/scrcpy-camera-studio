@@ -3,36 +3,90 @@ import os
 import re
 import threading
 import time
+from enum import Enum
 from config.config import Config
+
+
+class CameraState(Enum):
+    STOPPED = 0
+    STARTING = 1
+    RUNNING = 2
+    STOPPING = 3
+    RESTARTING = 4
+
 
 class ScrcpyManager:
     def __init__(self, logger):
         self.logger = logger
         self.processes = {}  # dict mapping mode (e.g., 'camera', 'mirror') to process
-        self.scrcpy_path = Config.get_bin_path("scrcpy")
+        self.scrcpy_path = None
         self._last_return_codes = {}
         self.process_logs = {"camera": [], "mirror": []}
         self._manual_stop = {"camera": False, "mirror": False}
         self._error_reported = {"camera": False, "mirror": False}
 
+        # Thread-safety for process handles + camera state transitions.
+        self._state_lock = threading.RLock()
+        self._camera_state = CameraState.STOPPED
+
+    def _resolve_scrcpy_path(self):
+        """Resolve the active scrcpy binary each time so packaged builds pick up updated runtime installs."""
+        if self.scrcpy_path and os.path.exists(self.scrcpy_path):
+            return self.scrcpy_path
+
+        resolved = Config.get_bin_path("scrcpy")
+        # CRITICAL: Check if binary actually exists (not just the directory)
+        if resolved and os.path.exists(resolved):
+            self.scrcpy_path = resolved
+            return resolved
+
+        # Binary not found anywhere
+        self.scrcpy_path = None
+        return None
+
+    def get_camera_state(self):
+        with self._state_lock:
+            return self._camera_state
+
+    def is_camera_active(self):
+        with self._state_lock:
+            return self._camera_state in (CameraState.STARTING, CameraState.RUNNING, CameraState.STOPPING, CameraState.RESTARTING)
+
+    def is_camera_available(self):
+        # For camera enumeration safety: only safe while STOPPED.
+        with self._state_lock:
+            return self._camera_state == CameraState.STOPPED
+
     def start(self, settings_data, mode="camera", parent_window_id=None):
-        if self.is_running(mode):
-            self.logger.warning(f"Scrcpy mode {mode} sudah berjalan. Mengabaikan perintah Start.")
-            return
-            
+        with self._state_lock:
+            if mode == "camera":
+                if self._camera_state in (CameraState.STARTING, CameraState.RUNNING, CameraState.STOPPING, CameraState.RESTARTING):
+                    self.logger.warning("Scrcpy camera session sedang aktif. Mengabaikan start.")
+                    return
+                self._camera_state = CameraState.STARTING
+            else:
+                if self.is_running(mode):
+                    self.logger.warning(f"Scrcpy mode {mode} sudah berjalan. Mengabaikan perintah Start.")
+                    return
+
         try:
             self._manual_stop[mode] = False
             self._error_reported[mode] = False
             self._last_return_codes[mode] = None
             self.process_logs[mode] = []
             
+            scrcpy_path = self._resolve_scrcpy_path()
+            if not scrcpy_path:
+                self.logger.error("Tidak dapat menemukan scrcpy yang dapat dieksekusi.")
+                return
+
             self.logger.info(f"Menyiapkan parameter scrcpy (mode: {mode})...")
             if mode == "mirror":
-                args = [self.scrcpy_path]
+                args = [scrcpy_path]
                 if parent_window_id:
                     args.append(f"--parent={parent_window_id}")
             else:
-                args = [self.scrcpy_path, "--video-source=camera"]
+                args = [scrcpy_path, "--video-source=camera"]
 
             # --- IMPLEMENTASI TARGET MULTI-DEVICE ---
             target_serial = settings_data.get("target_device", "").strip()
@@ -50,6 +104,10 @@ class ScrcpyManager:
             #   - AR != Auto  → gunakan --camera-ar saja (scrcpy hitung size sendiri)
             #   - AR == Auto  → gunakan --camera-size (hitung dari resolusi)
             res = settings_data.get("resolution", "1080")
+            bitrate = settings_data.get("bitrate", "8M")
+            if mode == "mirror":
+                res = settings_data.get("mirror_resolution", settings_data.get("resolution", "Auto"))
+                bitrate = settings_data.get("mirror_bitrate", settings_data.get("bitrate", "8M"))
             if mode == "camera":
                 ar = settings_data.get("aspect_ratio", "Auto")
                 if ar and ar.lower() != "auto":
@@ -88,9 +146,12 @@ class ScrcpyManager:
                     args.append(f"--max-fps={fps}")
 
             # Konfigurasi Bitrate
-            bitrate = settings_data.get("bitrate", "8M")
+            # Requirement: Treat "Auto" as "do not pass --video-bit-rate".
             if bitrate:
-                args.append(f"--video-bit-rate={bitrate}")
+                br = str(bitrate).strip()
+                if br and br.lower() != "auto":
+                    args.append(f"--video-bit-rate={br}")
+
 
             # Konfigurasi Audio
             # scrcpy >= 2.0 mendukung --audio-source=mic atau --audio-source=playback
@@ -111,9 +172,14 @@ class ScrcpyManager:
                 rotate = settings_data.get("rotate", 0)
                 rotation_map = {0: "0", 1: "90", 2: "180", 3: "270", "0": "0", "1": "90", "2": "180", "3": "270"}
                 orientation = rotation_map.get(rotate, str(rotate))
-                if settings_data.get("mirror", False):
+                # scrcpy 4.0 expects mirror as horizontal flip via `flip{rotation}`.
+                # (Vertical flip vs horizontal flip are not distinguishable by our UI; this mapping matches scrcpy's accepted tokens.)
+                mirror = settings_data.get("mirror", False)
+                if mirror:
                     orientation = f"flip{orientation}"
                 args.append(f"--capture-orientation={orientation}")
+
+
 
             # Implementasi Preview Mode
             # Hanya berlaku untuk mode camera.
@@ -146,11 +212,19 @@ class ScrcpyManager:
             self.processes[mode] = process
             self._last_return_codes[mode] = None
 
+            # Watcher: ensures camera state never stays RUNNING if scrcpy exits unexpectedly.
+            threading.Thread(
+                target=self._watch_process_exit,
+                args=(process, mode),
+                daemon=True
+            ).start()
+
             threading.Thread(
                 target=self._forward_process_output,
                 args=(process, mode),
                 daemon=True
             ).start()
+
 
             time.sleep(0.3)
             if process.poll() is not None:
@@ -158,18 +232,40 @@ class ScrcpyManager:
                 self._last_return_codes[mode] = return_code
                 if mode in self.processes:
                     del self.processes[mode]
+                if mode == "camera":
+                    with self._state_lock:
+                        self._camera_state = CameraState.STOPPED
                 self.logger.error(f"scrcpy {mode} berhenti saat start. Exit code: {return_code}")
                 return
-            
+
+            if mode == "camera":
+                with self._state_lock:
+                    self._camera_state = CameraState.RUNNING
+
             # Log informasi dengan tambahan target device jika ada
             self.logger.info(f"Kamera scrcpy ({mode}) berhasil dijalankan {'untuk device '+target_serial if target_serial else ''}.")
-            
+
         except Exception as e:
+            if mode == "camera":
+                with self._state_lock:
+                    self._camera_state = CameraState.STOPPED
             self.logger.error(f"Gagal menjalankan scrcpy {mode}: {e}")
 
     def list_cameras(self, target_serial=""):
-        """Mengambil daftar kamera dari scrcpy --list-cameras."""
-        args = [self.scrcpy_path]
+        """Mengambil daftar kamera dari scrcpy --list-cameras.
+
+        Contract: Must never execute while the camera session is in STARTING/RUNNING/STOPPING/RESTARTING.
+        """
+        with self._state_lock:
+            if self._camera_state in (CameraState.STARTING, CameraState.RUNNING, CameraState.STOPPING, CameraState.RESTARTING):
+                return []
+
+        scrcpy_path = self._resolve_scrcpy_path()
+        if not scrcpy_path:
+            self.logger.error("Tidak dapat menemukan scrcpy untuk list_cameras. Mohon install runtime terlebih dahulu.")
+            return []
+
+        args = [scrcpy_path]
         target_serial = (target_serial or "").strip()
         if target_serial:
             args.append(f"--serial={target_serial}")
@@ -186,6 +282,9 @@ class ScrcpyManager:
                 creationflags=creationflags,
                 timeout=8
             )
+        except FileNotFoundError as e:
+            self.logger.error(f"scrcpy binary tidak ditemukan di path: {scrcpy_path}")
+            return []
         except Exception as e:
             self.logger.error(f"Gagal membaca daftar kamera: {e}")
             return []
@@ -232,7 +331,51 @@ class ScrcpyManager:
 
         return cameras
 
+    def _watch_process_exit(self, process, mode):
+        """Wait for scrcpy process exit and reconcile camera state.
+
+        Requirement:
+        - If process exits unexpectedly while camera session is STARTING/RUNNING,
+          transition camera to STOPPED immediately and remove process handles.
+        - If stop() was invoked (manual), state reconciliation is allowed but should not
+          trigger unexpected error handling.
+        """
+        try:
+            rc = process.wait()
+        except Exception:
+            rc = None
+
+        with self._state_lock:
+            # Update last return code.
+            if mode in self._last_return_codes:
+                self._last_return_codes[mode] = rc
+
+            # Remove handle if still present.
+            if mode in self.processes and self.processes.get(mode) is process:
+                try:
+                    del self.processes[mode]
+                except Exception:
+                    pass
+
+            if mode == "camera":
+                # Only change state for camera transitions; STOPPED is always safe.
+                # If this exit is the result of stop(), manual_stop will be True.
+                # Otherwise, we must not remain in RUNNING.
+                manual = bool(self._manual_stop.get("camera", False))
+                self._camera_state = CameraState.STOPPED
+
+                # Clear busy flags so subsequent starts are allowed.
+                # IMPORTANT: only clear manual_stop after state reconciliation is done.
+                self._manual_stop["camera"] = False
+
+                if not manual:
+                    self.logger.error(f"scrcpy camera exited unexpectedly (rc={rc}). Camera state forced to STOPPED.")
+
+
+        # Note: UI is updated by existing poll_scrcpy_status() which queries is_running("camera").
+
     def _forward_process_output(self, process, mode):
+
         """Meneruskan output scrcpy ke log aplikasi agar error tidak tersembunyi."""
         if process.stdout is None:
             return
@@ -257,12 +400,44 @@ class ScrcpyManager:
                 self.stop(m)
             return
 
+        if mode == "camera":
+            # Requirement: change state to STOPPING, wait for process termination,
+            # then remove process handles, finally STOPPED.
+            with self._state_lock:
+                if self._camera_state in (CameraState.STOPPING, CameraState.STOPPED):
+                    return
+                self._camera_state = CameraState.STOPPING
+
+                proc = self.processes.get(mode)
+                if proc is None:
+                    self._camera_state = CameraState.STOPPED
+                    return
+
+            # Terminate + wait (do not use async terminate thread for camera stop)
+            try:
+                self._manual_stop[mode] = True
+                self.logger.info("Menghentikan proses scrcpy (camera)...")
+                proc.terminate()
+                try:
+                    proc.wait(timeout=3)
+                except subprocess.TimeoutExpired:
+                    proc.kill()
+                    proc.wait()
+            finally:
+                with self._state_lock:
+                    if mode in self.processes:
+                        del self.processes[mode]
+                    self._camera_state = CameraState.STOPPED
+                    self.logger.info("Proses scrcpy (camera) dihentikan.")
+            return
+
+        # Mirror mode behavior remains unchanged (non-camera)
         if self.is_running(mode):
             self._manual_stop[mode] = True
             self.logger.info(f"Menghentikan proses scrcpy ({mode})...")
             proc = self.processes[mode]
             del self.processes[mode]
-            
+
             def terminate_worker():
                 try:
                     proc.terminate()
@@ -274,7 +449,7 @@ class ScrcpyManager:
                         proc.wait()
                 except Exception as e:
                     self.logger.error(f"Error terminating scrcpy ({mode}) process: {e}")
-                    
+
             threading.Thread(target=terminate_worker, daemon=True).start()
             self.logger.info(f"Proses scrcpy ({mode}) dihentikan.")
 
@@ -300,7 +475,7 @@ class ScrcpyManager:
 
     def get_local_version(self):
         """Membaca versi scrcpy lokal dengan menjalankan 'scrcpy --version'."""
-        scrcpy_path = Config.get_bin_path("scrcpy")
+        scrcpy_path = self._resolve_scrcpy_path()
         if not scrcpy_path or not os.path.exists(scrcpy_path):
             return None
         try:
