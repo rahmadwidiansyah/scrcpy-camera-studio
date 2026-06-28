@@ -1,5 +1,6 @@
 import os
 import json
+import ssl
 import urllib.request
 import logging
 
@@ -20,7 +21,10 @@ class GitHubService:
                 api_url,
                 headers={"User-Agent": "Camera-Studio-GitHubService"}
             )
-            with urllib.request.urlopen(req, timeout=8) as response:
+            ctx = ssl.create_default_context()
+            ctx.check_hostname = False
+            ctx.verify_mode = ssl.CERT_NONE
+            with urllib.request.urlopen(req, timeout=8, context=ctx) as response:
                 data = json.loads(response.read().decode("utf-8"))
                 
                 tag_name = data.get("tag_name", "").strip()
@@ -63,8 +67,11 @@ class GitHubService:
                 zipball_url,
                 headers={"User-Agent": "Camera-Studio-GitHubService"}
             )
+            ctx = ssl.create_default_context()
+            ctx.check_hostname = False
+            ctx.verify_mode = ssl.CERT_NONE
             
-            with urllib.request.urlopen(req, timeout=15) as response:
+            with urllib.request.urlopen(req, timeout=15, context=ctx) as response:
                 with open(dest_path, "wb") as f:
                     chunk_size = 16384
                     while True:
@@ -95,8 +102,11 @@ class GitHubService:
                 asset_url,
                 headers={"User-Agent": "Camera-Studio-GitHubService"}
             )
+            ctx = ssl.create_default_context()
+            ctx.check_hostname = False
+            ctx.verify_mode = ssl.CERT_NONE
             
-            with urllib.request.urlopen(req, timeout=15) as response:
+            with urllib.request.urlopen(req, timeout=15, context=ctx) as response:
                 total_bytes = int(response.headers.get('content-length', 0))
                 downloaded_bytes = 0
                 chunk_size = 16384

@@ -26,9 +26,9 @@ class RuntimeInstaller:
         if platform.system() == "Linux":
             self.logger.info(f"Linux detected. Installing dependency {name} natively...")
             pkg_map = {
-                "adb": {"pacman": "android-tools", "apt": "adb"},
-                "scrcpy": {"pacman": "scrcpy", "apt": "scrcpy"},
-                "ffmpeg": {"pacman": "ffmpeg", "apt": "ffmpeg"}
+                "adb": {"pacman": ["android-tools"], "apt": ["adb"]},
+                "scrcpy": {"pacman": ["scrcpy", "fontconfig", "pango"], "apt": ["scrcpy", "libpango-1.0-0", "libpangocairo-1.0-0", "fontconfig"]},
+                "ffmpeg": {"pacman": ["ffmpeg"], "apt": ["ffmpeg"]}
             }
             
             pkg_info = pkg_map.get(name)
@@ -36,11 +36,14 @@ class RuntimeInstaller:
                 return False
 
             if shutil.which("pkexec"):
-                cmd = ["pkexec", "pacman", "-S", "--noconfirm", pkg_info["pacman"]] if shutil.which("pacman") else f"pkexec apt-get update && pkexec apt-get install -y {pkg_info['apt']}"
+                if shutil.which("pacman"):
+                    cmd = ["pkexec", "pacman", "-S", "--noconfirm"] + pkg_info["pacman"]
+                else:
+                    cmd = f"pkexec apt-get update && pkexec apt-get install -y {' '.join(pkg_info['apt'])}"
             elif shutil.which("pacman"):
-                cmd = ["sudo", "pacman", "-S", "--noconfirm", pkg_info["pacman"]]
+                cmd = ["sudo", "pacman", "-S", "--noconfirm"] + pkg_info["pacman"]
             elif shutil.which("apt-get"):
-                cmd = f"sudo apt-get update && sudo apt-get install -y {pkg_info['apt']}"
+                cmd = f"sudo apt-get update && sudo apt-get install -y {' '.join(pkg_info['apt'])}"
             else:
                 self.logger.error("Supported package manager (pacman/apt) not found.")
                 return False
