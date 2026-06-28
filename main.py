@@ -52,12 +52,12 @@ def poll_devices_worker(app, adb_manager, scrcpy_manager, settings):
             devices = adb_manager.get_connected_devices()
             app.after(0, lambda d=devices: app.update_device_list(d))
 
-            target_serial = settings.get("target_device") or ""
-            if target_serial and getattr(app, "_last_camera_scan_serial", None) != target_serial:
-                app._last_camera_scan_serial = target_serial
-                cameras = scrcpy_manager.list_cameras(target_serial)
+            camera_serial = (settings.get("camera_device") or settings.get("target_device") or "").strip()
+            if camera_serial and getattr(app, "_last_camera_scan_serial", None) != camera_serial:
+                app._last_camera_scan_serial = camera_serial
+                cameras = scrcpy_manager.list_cameras(camera_serial)
                 app.after(0, lambda c=cameras: app.update_camera_options(c))
-            elif not target_serial:
+            elif not camera_serial:
                 app._last_camera_scan_serial = None
                 app.after(0, lambda: app.update_camera_options([]))
         except Exception as e:

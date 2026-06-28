@@ -116,6 +116,18 @@ def ghost_btn(parent, text, command, width=90, height=30, **kw):
     )
 
 
+def widget_is_alive(widget):
+    """Return True when a Tk widget still exists and can be safely updated."""
+    if widget is None:
+        return False
+    try:
+        if hasattr(widget, "winfo_exists"):
+            return bool(widget.winfo_exists())
+        return True
+    except Exception:
+        return False
+
+
 # ═══════════════════════════════════════════════════════════════
 #  TOOLTIP
 # ═══════════════════════════════════════════════════════════════
@@ -760,8 +772,10 @@ class CameraStudioUI(ctk.CTk):
                                      command=lambda v: self._on_setting_change("mirror", v == "Mirrored")),
                     row=0, col=1)
 
-        icon_up = chr(57366); icon_right = chr(57364)
-        icon_down = chr(57361); icon_left = chr(57362)
+        icon_up = "↑"
+        icon_right = "→"
+        icon_down = "↓"
+        icon_left = "←"
         self.var_rot = ctk.StringVar(value=icon_up)
         seg_rot = ctk.CTkSegmentedButton(
             tr_card,
@@ -771,7 +785,7 @@ class CameraStudioUI(ctk.CTk):
                 "rotate",
                 {icon_up: 0, icon_right: 90, icon_down: 180, icon_left: 270}.get(v, 0)
             ),
-            font=("lineicons-free-solid", 18),
+            font=("Segoe UI Symbol", 16, "bold"),
             selected_color=T.CRIMSON, selected_hover_color=T.CRIMSON_H,
             unselected_color=T.BG_2, unselected_hover_color=T.BG_3,
             text_color=T.TEXT_0, corner_radius=T.R_SM, height=34,
@@ -914,6 +928,12 @@ class CameraStudioUI(ctk.CTk):
         )
         ghost_btn(hdr, "⟳  Refresh", self._on_refresh_devices, width=100).grid(
             row=0, column=2, sticky="e"
+        )
+        ghost_btn(hdr, "Test ADB", self._on_test_adb_clicked, width=90).grid(
+            row=0, column=3, sticky="e", padx=(8, 0)
+        )
+        ghost_btn(hdr, "Restart ADB", self._on_restart_adb_clicked, width=100).grid(
+            row=0, column=4, sticky="e", padx=(8, 0)
         )
 
         # ── Scrollable body ──────────────────────────────────────
@@ -1250,11 +1270,15 @@ class CameraStudioUI(ctk.CTk):
 
     def _show_card_msg(self, card, text: str, color=None):
         """Show an inline message on a device card."""
-        if not hasattr(card, "_msg_lbl"):
+        msg_lbl = getattr(card, "_msg_lbl", None)
+        if not widget_is_alive(msg_lbl):
             return
         color = color or T.TEXT_2
-        card._msg_lbl.configure(text=text, text_color=color)
-        card._msg_lbl.grid()
+        try:
+            msg_lbl.configure(text=text, text_color=color)
+            msg_lbl.grid()
+        except Exception:
+            pass
 
     def _start_enable_wifi(self, serial: str, card):
         """Phase 1: tcpip + IP detection → show IP selection / confirmation dialog."""
@@ -1289,8 +1313,13 @@ class CameraStudioUI(ctk.CTk):
             ", ".join(e['ip'] for e in ip_list)
         )
 
-        # Clear loading message
-        card._msg_lbl.grid_remove()
+        # Clear loading message safely if the card is still alive.
+        msg_lbl = getattr(card, "_msg_lbl", None)
+        if widget_is_alive(msg_lbl):
+            try:
+                msg_lbl.grid_remove()
+            except Exception:
+                pass
 
         if len(ip_list) == 1:
             # Only one address — go straight to confirm dialog
@@ -1614,6 +1643,52 @@ class CameraStudioUI(ctk.CTk):
     def _on_refresh_devices(self):
         self.append_log("Refreshing device list…")
         self._trigger_device_refresh()
+
+    def _on_test_adb_clicked(self):
+        """Run adb start-server and adb devices to verify ADB is available."""
+        self.append_log("Testing ADB connection…")
+
+        def worker():
+            adb = getattr(self, "_adb_manager", None)
+            if not adb:
+                self.after(0, lambda: self.append_log("[ERROR] ADB manager not available."))
+                return
+
+            def on_done(ok: bool, msg: str):
+                self.after(0, lambda: self._handle_adb_test_result(ok, msg))
+
+            adb.test_adb_connection(on_done=on_done)
+
+        threading.Thread(target=worker, daemon=True).start()
+
+    def _on_restart_adb_clicked(self):
+        """Restart the ADB server from the Devices page."""
+        self.append_log("Restarting ADB server…")
+
+        def worker():
+            adb = getattr(self, "_adb_manager", None)
+            if not adb:
+                self.after(0, lambda: self.append_log("[ERROR] ADB manager not available."))
+                return
+
+            def on_done(ok: bool, msg: str):
+                self.after(0, lambda: self._handle_adb_restart_result(ok, msg))
+
+            adb.restart_adb(on_done=on_done)
+
+        threading.Thread(target=worker, daemon=True).start()
+
+    def _handle_adb_test_result(self, ok: bool, msg: str):
+        if ok:
+            self.append_log(f"ADB test OK: {msg}")
+        else:
+            self.append_log(f"ADB test failed: {msg}")
+
+    def _handle_adb_restart_result(self, ok: bool, msg: str):
+        if ok:
+            self.append_log(f"ADB restart OK: {msg}")
+        else:
+            self.append_log(f"ADB restart failed: {msg}")
 
     def _trigger_device_refresh(self):
         """Immediately poll ADB and update device list. Safe to call from any thread."""

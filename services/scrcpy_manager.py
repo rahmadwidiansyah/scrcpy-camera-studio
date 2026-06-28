@@ -195,21 +195,33 @@ class ScrcpyManager:
             return []
 
         cameras = []
-        for line in result.stdout.splitlines():
-            match = re.search(r"--camera-id=(\S+)\s+\((.+)\)", line)
+        for raw_line in result.stdout.splitlines():
+            line = raw_line.strip()
+            if not line:
+                continue
+
+            match = re.search(r"(?:--)?camera-id=([^\s]+)", line)
             if not match:
                 continue
 
-            camera_id = match.group(1)
-            detail = match.group(2)
+            camera_id = match.group(1).strip(" ,")
+            detail_match = re.search(r"\((.+)\)", line)
+            detail = detail_match.group(1).strip() if detail_match else ""
+            if not detail:
+                detail = line.replace(match.group(0), "", 1).strip(" -")
+
             fps_match = re.search(r"fps=\{([^}]+)\}", detail)
             fps_values = []
             if fps_match:
                 fps_values = [value.strip() for value in fps_match.group(1).split(",")]
 
+            label = f"Camera {camera_id}"
+            if detail:
+                label = f"{label} ({detail})"
+
             cameras.append({
                 "id": camera_id,
-                "label": f"Camera {camera_id} ({detail})",
+                "label": label,
                 "fps": fps_values
             })
 

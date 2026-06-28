@@ -37,6 +37,64 @@ class ADBManager:
             self._log_error_once(f"Gagal membaca daftar device ADB: {e}")
         return devices
 
+    def test_adb_connection(self, on_done=None):
+        """Run adb start-server and adb devices to verify ADB is available."""
+        try:
+            start_result = self._run_adb(["start-server"], timeout=8)
+            if start_result is None:
+                if on_done:
+                    on_done(False, "ADB start-server timed out.")
+                return
+
+            devices_result = self._run_adb(["devices"], timeout=8)
+            if devices_result is None:
+                if on_done:
+                    on_done(False, "ADB devices timed out.")
+                return
+
+            output = (devices_result.stdout or "").strip()
+            if devices_result.returncode == 0:
+                if on_done:
+                    on_done(True, output or "ADB is responding. No devices detected yet.")
+            else:
+                if on_done:
+                    on_done(False, output or "ADB devices command failed.")
+        except Exception as e:
+            if on_done:
+                on_done(False, str(e))
+
+    def restart_adb(self, on_done=None):
+        """Restart ADB server by killing and starting it again."""
+        try:
+            kill_result = self._run_adb(["kill-server"], timeout=5)
+            if kill_result is None:
+                if on_done:
+                    on_done(False, "ADB kill-server timed out.")
+                return
+
+            start_result = self._run_adb(["start-server"], timeout=8)
+            if start_result is None:
+                if on_done:
+                    on_done(False, "ADB restart timed out.")
+                return
+
+            devices_result = self._run_adb(["devices"], timeout=8)
+            if devices_result is None:
+                if on_done:
+                    on_done(False, "ADB devices timed out after restart.")
+                return
+
+            output = (devices_result.stdout or "").strip()
+            if devices_result.returncode == 0:
+                if on_done:
+                    on_done(True, output or "ADB server restarted successfully.")
+            else:
+                if on_done:
+                    on_done(False, output or "ADB restart failed.")
+        except Exception as e:
+            if on_done:
+                on_done(False, str(e))
+
     def enable_wifi_adb(self, serial: str, on_done=None):
         """
         Aktifkan ADB over WiFi untuk device `serial`.
