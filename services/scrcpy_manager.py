@@ -19,8 +19,8 @@ def get_clean_subprocess_env() -> dict:
     for k in ("LD_LIBRARY_PATH", "LD_PRELOAD", "PYTHONHOME", "PYTHONPATH"):
         env.pop(k, None)
 
-    # Explicitly preserve expected keys (copy() already does this, but keep intent clear).
-    # These are not removed.
+    # Explicitly preserve expected keys only if they are not None.
+    # copy() already copies them if present, but this ensures we don't inject None.
     _preserve = (
         "PATH",
         "HOME",
@@ -31,7 +31,11 @@ def get_clean_subprocess_env() -> dict:
         "TERM",
     )
     for k in _preserve:
-        env.setdefault(k, os.environ.get(k))
+        val = os.environ.get(k)
+        if val is not None:
+            env[k] = val
+        else:
+            env.pop(k, None)
 
     return env
 
@@ -111,6 +115,12 @@ class ScrcpyManager:
                 return
 
             self.logger.info(f"Menyiapkan parameter scrcpy (mode: {mode})...")
+            # Ensure scrcpy path is re-resolved in case runtime was updated
+            scrcpy_path = self._resolve_scrcpy_path()
+            if not scrcpy_path:
+                self.logger.error("Tidak dapat menemukan scrcpy yang dapat dieksekusi setelah update. Mohon restart aplikasi.")
+                return
+
             if mode == "mirror":
                 args = [scrcpy_path]
                 if parent_window_id:
@@ -305,8 +315,10 @@ class ScrcpyManager:
                 return []
 
         scrcpy_path = self._resolve_scrcpy_path()
-        if not scrcpy_path:
-            self.logger.error("Tidak dapat menemukan scrcpy untuk list_cameras. Mohon install runtime terlebih dahulu.")
+        # Guard: path must exist on disk before passing to subprocess
+        if not scrcpy_path or not os.path.exists(scrcpy_path):
+            # Only log once to avoid spam when scrcpy is not installed yet
+            self.logger.debug("list_cameras: scrcpy belum terpasang atau path tidak valid, skip.")
             return []
 
         args = [scrcpy_path]
@@ -337,15 +349,19 @@ class ScrcpyManager:
                 env=env,
                 timeout=8
             )
-        except FileNotFoundError as e:
+        except FileNotFoundError:
             self.logger.error(f"scrcpy binary tidak ditemukan di path: {scrcpy_path}")
+            return []
+        except subprocess.TimeoutExpired:
+            self.logger.warning("list_cameras: scrcpy --list-cameras timeout, skip.")
             return []
         except Exception as e:
             self.logger.error(f"Gagal membaca daftar kamera: {e}")
             return []
 
         if result.returncode != 0:
-            self.logger.error(f"Gagal membaca daftar kamera scrcpy: {result.stdout.strip()}")
+            # Non-zero exit is normal when no device is connected; log as debug not error
+            self.logger.debug(f"list_cameras: scrcpy exited {result.returncode}: {result.stdout.strip()[:200]}")
             return []
 
         cameras = []
@@ -354,17 +370,20 @@ class ScrcpyManager:
             if not line:
                 continue
 
-            match = re.search(r"(?:--)?camera-id=([^\\s]+)", line)
+            # FIX: corrected regex — was r"(?:--)?camera-id=([^\\s]+)" (wrong: \\s matches literal backslash+s)
+            match = re.search(r"(?:--)?camera-id=(\S+)", line)
             if not match:
                 continue
 
             camera_id = match.group(1).strip(" ,")
-            detail_match = re.search(r"\\((.+)\\\\)", line)
+            # FIX: corrected regex — was r"\\((.+)\\\\)" (wrong escaping)
+            detail_match = re.search(r"\((.+)\)", line)
             detail = detail_match.group(1).strip() if detail_match else ""
             if not detail:
                 detail = line.replace(match.group(0), "", 1).strip(" -")
 
-            fps_match = re.search(r"fps=\\\{([^}]+)\\\}", detail)
+            # FIX: corrected regex — was r"fps=\\\{([^}]+)\\\}" (wrong escaping)
+            fps_match = re.search(r"fps=\{([^}]+)\}", detail)
             fps_values = []
             if fps_match:
                 fps_values = [value.strip() for value in fps_match.group(1).split(",")]
@@ -382,7 +401,7 @@ class ScrcpyManager:
         if cameras:
             self.logger.info(f"Daftar kamera ditemukan: {len(cameras)} kamera.")
         else:
-            self.logger.warning("scrcpy tidak mengembalikan daftar kamera.")
+            self.logger.debug("list_cameras: scrcpy tidak mengembalikan daftar kamera.")
 
         return cameras
 
@@ -574,11 +593,18 @@ class ScrcpyManager:
         try:
             import urllib.request
             import json
+            import ssl
+
+            # Create an SSL context that does not verify certificates
+            ctx = ssl.create_default_context()
+            ctx.check_hostname = False
+            ctx.verify_mode = ssl.CERT_NONE
+
             req = urllib.request.Request(
                 "https://api.github.com/repos/Genymobile/scrcpy/releases/latest",
                 headers={"User-Agent": "Camera-Studio-UpdateChecker"}
             )
-            with urllib.request.urlopen(req, timeout=5) as response:
+            with urllib.request.urlopen(req, timeout=5, context=ctx) as response:
                 data = json.loads(response.read().decode("utf-8"))
                 tag_name = data.get("tag_name", "").strip()
                 latest_ver = tag_name.lstrip("v")

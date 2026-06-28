@@ -18,7 +18,7 @@ def check_all_dependencies(app, installer):
     deps = [
         ("adb", False),
         ("scrcpy", False),
-        ("SDL2", False),
+        ("SDL3", False),   # FIX: bundled runtime ships SDL3.dll, not SDL2.dll
         ("ffmpeg", True)
     ]
     for dep_name, is_optional in deps:
@@ -55,17 +55,27 @@ def poll_devices_worker(app, adb_manager, scrcpy_manager, settings):
             camera_serial = (settings.get("camera_device") or settings.get("target_device") or "").strip()
             last_serial = getattr(app, "_last_camera_scan_serial", None)
             last_had_cameras = getattr(app, "_last_camera_scan_had_cameras", None)
+
             if camera_serial:
-                # CRITICAL: Do not trigger list_cameras if scrcpy is actively running, as it will lock/interrupt the camera resource.
-                if (last_serial != camera_serial or last_had_cameras is False) and not scrcpy_manager.is_camera_active():
+                # Trigger scan only when:
+                # 1. Serial changed (new device selected), OR
+                # 2. Previous scan found no cameras (retry once per cycle to detect late camera availability)
+                # Never trigger while scrcpy is actively using the camera resource.
+                serial_changed = last_serial != camera_serial
+                should_retry = (last_had_cameras is False)  # False = scanned but no cameras; None = never scanned this serial yet but serial just set
+                first_scan = (last_serial is None and camera_serial)
+
+                if (serial_changed or should_retry or first_scan) and not scrcpy_manager.is_camera_active():
                     app._last_camera_scan_serial = camera_serial
                     cameras = scrcpy_manager.list_cameras(camera_serial)
                     app._last_camera_scan_had_cameras = bool(cameras)
                     app.after(0, lambda c=cameras: app.update_camera_options(c))
             else:
-                app._last_camera_scan_serial = None
-                app._last_camera_scan_had_cameras = None
-                app.after(0, lambda: app.update_camera_options([]))
+                # No device selected — reset state and clear camera list once
+                if last_serial is not None or last_had_cameras is not None:
+                    app._last_camera_scan_serial = None
+                    app._last_camera_scan_had_cameras = None
+                    app.after(0, lambda: app.update_camera_options([]))
         except Exception as e:
             exception_logger.error(f"Error in poll_devices_worker: {e}", exc_info=True)
 
@@ -117,7 +127,8 @@ def check_scrcpy_updates_async(app, scrcpy_manager, installer, logger):
         min_required_ver = "4.0"
         default_url = "https://github.com/Genymobile/scrcpy/releases/download/v4.0/scrcpy-win64-v4.0.zip"
 
-        if not is_scrcpy_installed or not os.path.exists(scrcpy_dir):
+        is_locally_required = (os.name == 'nt')
+        if not is_scrcpy_installed or (is_locally_required and not os.path.exists(scrcpy_dir)):
             logger.info("scrcpy belum terpasang. Mengambil URL rilis terbaru...")
             latest_ver, download_url = scrcpy_manager.get_latest_online_version()
             if download_url:

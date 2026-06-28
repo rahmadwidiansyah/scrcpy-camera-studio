@@ -31,14 +31,15 @@ class RuntimeManager:
         if shutil.which(name):
             return True
 
-        # Penanganan khusus untuk SDL2 (bawaan scrcpy)
-        if name.lower() == "sdl2":
-            sdl_lib = "SDL2.dll" if os.name == 'nt' else "libSDL2.so"
-            if os.path.exists(os.path.join(DirectoryManager.BIN_DIR, sdl_lib)):
-                return True
-            if os.path.exists(os.path.join(DirectoryManager.BIN_DIR, "scrcpy", sdl_lib)):
-                return True
-            # Jika scrcpy global tersedia, asumsikan SDL2 juga aman di sistem
+        # Penanganan khusus untuk SDL2/SDL3 (bawaan scrcpy)
+        if name.lower() in ("sdl2", "sdl3"):
+            # Check both SDL2 and SDL3 (newer scrcpy ships SDL3)
+            for sdl_lib in ("SDL2.dll", "SDL3.dll") if os.name == 'nt' else ("libSDL2.so", "libSDL2-2.0.so.0", "libSDL3.so", "libSDL3.0.so.0"):
+                if os.path.exists(os.path.join(DirectoryManager.BIN_DIR, sdl_lib)):
+                    return True
+                if os.path.exists(os.path.join(DirectoryManager.BIN_DIR, "scrcpy", sdl_lib)):
+                    return True
+            # Jika scrcpy global tersedia, asumsikan SDL juga aman di sistem
             if shutil.which("scrcpy"):
                 return True
 
@@ -50,7 +51,7 @@ class RuntimeManager:
         Mendapatkan path executable yang valid dengan aturan prioritas:
         1. Gunakan binary yang ada di folder bin/ lokal jika tersedia.
         2. Jika tidak ditemukan, cari dan gunakan path dari PATH sistem.
-        3. Fallback ke default path jika tidak ditemukan di keduanya.
+        3. Return None jika tidak ditemukan di manapun (jangan return path fiktif).
         """
         name = name.lower()
         if name == "platform-tools":
@@ -70,8 +71,9 @@ class RuntimeManager:
         if system_path:
             return system_path
 
-        # Fallback terakhir jika benar-benar tidak ditemukan di mana pun
-        return bin_path_scrcpy if os.path.exists(os.path.join(DirectoryManager.BIN_DIR, "scrcpy")) else bin_path
+        # FIX: Jangan return path yang tidak ada. Return None agar caller bisa
+        # handle dengan aman (cegah subprocess.run([None, ...]) → TypeError).
+        return None
 
     # --- ADVANCED RUNTIME MANAGEMENT INSTANCE METHODS ---
     def __init__(self, github_service: GitHubService = None):
@@ -110,7 +112,10 @@ class RuntimeManager:
         from packaging.version import parse as parse_version
         try:
             return parse_version(latest_ver) > parse_version(local_ver)
-        except Exception:
+        except Exception as e:
+            # Log the error for debugging, but don't stop the check
+            if self.github_service and self.github_service.logger: # Access logger via github_service
+                self.github_service.logger.debug(f"Error parsing version for {name}: {e}")
             return False
 
     def get_installed_version(self, name: str) -> str:

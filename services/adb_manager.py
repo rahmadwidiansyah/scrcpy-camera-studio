@@ -15,6 +15,12 @@ class ADBManager:
         """Menjalankan 'adb devices' dan mengembalikan list objek AndroidDevice."""
         devices = []
         try:
+            # Ensure adb path is re-resolved in case runtime was updated
+            self.adb_path = Config.get_bin_path("adb")
+            if not self.adb_path:
+                self._log_error_once("ADB binary path not found. Please install ADB runtime.")
+                return devices
+
             result = self._run_adb(["devices"], timeout=2)
             if result is None or result.returncode != 0:
                 return devices

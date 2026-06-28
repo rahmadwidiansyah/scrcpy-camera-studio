@@ -47,6 +47,10 @@ class GitHubService:
                     "download_url": html_url,
                     "assets": assets
                 }
+        except urllib.error.URLError as e: # Catch URLError specifically for SSL issues
+            self.logger.error(f"GitHubService: Gagal memeriksa rilis untuk {repo} karena masalah jaringan/SSL: {e}")
+            # Fallback or alternative logic can be added here if needed
+            return None
         except Exception as e:
             self.logger.error(f"GitHubService: Gagal memeriksa rilis untuk {repo}: {e}")
             return None
@@ -82,6 +86,9 @@ class GitHubService:
                         
             self.logger.info(f"GitHubService: Source code berhasil diunduh ke {dest_path}")
             return dest_path
+        except urllib.error.URLError as e: # Catch URLError specifically for SSL issues
+            self.logger.error(f"GitHubService: Gagal mengunduh source code rilis {tag} karena masalah jaringan/SSL: {e}")
+            return None
         except Exception as e:
             self.logger.error(f"GitHubService: Gagal mengunduh source code rilis {tag}: {e}")
             return None
@@ -107,7 +114,7 @@ class GitHubService:
             ctx.verify_mode = ssl.CERT_NONE
             
             with urllib.request.urlopen(req, timeout=15, context=ctx) as response:
-                total_bytes = int(response.headers.get('content-length', 0))
+                total_bytes = int(response.headers.get("content-length", 0))
                 downloaded_bytes = 0
                 chunk_size = 16384
                 
@@ -126,6 +133,9 @@ class GitHubService:
                                 
             self.logger.info(f"GitHubService: Asset berhasil diunduh ke {dest_path}")
             return dest_path
+        except urllib.error.URLError as e: # Catch URLError specifically for SSL issues
+            self.logger.error(f"GitHubService: Gagal mengunduh asset karena masalah jaringan/SSL: {e}")
+            return None
         except Exception as e:
             self.logger.error(f"GitHubService: Gagal mengunduh asset: {e}")
             return None
