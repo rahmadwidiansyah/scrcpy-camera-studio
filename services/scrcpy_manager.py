@@ -354,17 +354,17 @@ class ScrcpyManager:
             if not line:
                 continue
 
-            match = re.search(r"(?:--)?camera-id=([^\s]+)", line)
+            match = re.search(r"(?:--)?camera-id=([^\\s]+)", line)
             if not match:
                 continue
 
             camera_id = match.group(1).strip(" ,")
-            detail_match = re.search(r"\((.+)\)", line)
+            detail_match = re.search(r"\\((.+)\\\\)", line)
             detail = detail_match.group(1).strip() if detail_match else ""
             if not detail:
                 detail = line.replace(match.group(0), "", 1).strip(" -")
 
-            fps_match = re.search(r"fps=\{([^}]+)\}", detail)
+            fps_match = re.search(r"fps=\\\{([^}]+)\\\}", detail)
             fps_values = []
             if fps_match:
                 fps_values = [value.strip() for value in fps_match.group(1).split(",")]

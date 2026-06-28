@@ -40,13 +40,13 @@ class ADBManager:
     def test_adb_connection(self, on_done=None):
         """Run adb start-server and adb devices to verify ADB is available."""
         try:
-            start_result = self._run_adb(["start-server"], timeout=8)
+            start_result = self._run_adb(["start-server"], timeout=15)  # Increased timeout
             if start_result is None:
                 if on_done:
                     on_done(False, "ADB start-server timed out.")
                 return
 
-            devices_result = self._run_adb(["devices"], timeout=8)
+            devices_result = self._run_adb(["devices"], timeout=15)  # Increased timeout
             if devices_result is None:
                 if on_done:
                     on_done(False, "ADB devices timed out.")
@@ -66,19 +66,19 @@ class ADBManager:
     def restart_adb(self, on_done=None):
         """Restart ADB server by killing and starting it again."""
         try:
-            kill_result = self._run_adb(["kill-server"], timeout=5)
+            kill_result = self._run_adb(["kill-server"], timeout=10)  # Increased timeout
             if kill_result is None:
                 if on_done:
                     on_done(False, "ADB kill-server timed out.")
                 return
 
-            start_result = self._run_adb(["start-server"], timeout=8)
+            start_result = self._run_adb(["start-server"], timeout=15)  # Increased timeout
             if start_result is None:
                 if on_done:
                     on_done(False, "ADB restart timed out.")
                 return
 
-            devices_result = self._run_adb(["devices"], timeout=8)
+            devices_result = self._run_adb(["devices"], timeout=15)  # Increased timeout
             if devices_result is None:
                 if on_done:
                     on_done(False, "ADB devices timed out after restart.")
