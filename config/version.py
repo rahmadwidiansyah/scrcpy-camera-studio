@@ -3,7 +3,7 @@ APP_NAME_SHORT = "SCS"
 
 
 class VersionManager:
-    CURRENT_VERSION = "3.0.1"
+    CURRENT_VERSION = "3.1.0"
     BUILD_NUMBER = "300"
     RELEASE_CHANNEL = "stable"
 
